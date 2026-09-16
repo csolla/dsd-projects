@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSD — Projects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,560&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #FAF8F3; --panel: #FFFFFF; --ink: #1C2420; --ink-soft: #5C6660; --ink-faint: #93998F;
+    --line: #E4DFD3; --teal: #2B5F5C; --teal-soft: #E4EEEC; --coral: #C97B63; --coral-soft: #F6E7E1;
+    --amber: #B9873E; --amber-soft: #F2E7D3; --sage: #5F8467; --sage-soft: #E4EBE1; --focus: #2B5F5C;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --bg: #171B19; --panel: #1E2422; --ink: #EDEAE2; --ink-soft: #A9B0A9; --ink-faint: #6D746D;
+    --line: #303934; --teal: #6FADA6; --teal-soft: #24322F; --coral: #E0987F; --coral-soft: #33251F;
+    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #171B19; --panel: #1E2422; --ink: #EDEAE2; --ink-soft: #A9B0A9; --ink-faint: #6D746D;
+    --line: #303934; --teal: #6FADA6; --teal-soft: #24322F; --coral: #E0987F; --coral-soft: #33251F;
+    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; min-height: 100vh; }
+  h1, h2, h3, .display { font-family: "Fraunces", Georgia, "Times New Roman", serif; font-weight: 560; letter-spacing: -0.01em; margin: 0; }
+  button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  a { color: var(--teal); }
+
+  /* Auth screen */
+  .auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .auth-card { width: 360px; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; text-align: center; }
+  .auth-mark { width: 34px; height: 34px; margin: 0 auto 14px auto; }
+  .auth-card h1 { font-size: 20px; margin-bottom: 6px; }
+  .auth-card p { color: var(--ink-soft); font-size: 13px; margin-bottom: 20px; }
+  .auth-card input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); margin-bottom: 12px; text-align: center; }
+  .auth-status { font-size: 12.5px; color: var(--ink-soft); margin-top: 14px; min-height: 16px; }
+  .auth-status.error { color: var(--coral); }
+
+  .app { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--line); padding: 24px 16px; display: flex; flex-direction: column; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+  .brand-mark { width: 26px; height: 26px; flex-shrink: 0; }
+  .brand-name { font-family: "Fraunces", serif; font-weight: 560; font-size: 17px; }
+  .brand-sub { font-size: 11px; color: var(--ink-faint); margin-top: 1px; }
+  nav.primary-nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 6px; color: var(--ink-soft); text-decoration: none; cursor: pointer; border: none; background: none; text-align: left; width: 100%; font-size: 13.5px; }
+  .nav-item:hover { background: var(--teal-soft); color: var(--ink); }
+  .nav-item.active { background: var(--teal-soft); color: var(--teal); font-weight: 500; }
+  .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .sidebar-foot { margin-top: auto; padding: 0 8px; display: flex; flex-direction: column; gap: 8px; }
+  .notif-row { position: relative; }
+  .notif-btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px; cursor: pointer; color: var(--ink-soft); font-size: 12.5px; position: relative; }
+  .notif-btn:hover { background: var(--teal-soft); color: var(--ink); }
+  .notif-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .notif-badge { position: absolute; top: 4px; left: 20px; background: var(--coral); color: #fff; font-size: 9.5px; font-weight: 600; min-width: 15px; height: 15px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-panel { position: absolute; bottom: calc(100% + 8px); left: 0; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(20,24,22,0.14); max-height: 320px; overflow-y: auto; z-index: 30; }
+  .notif-item { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--ink); }
+  .notif-item:hover { background: var(--teal-soft); }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item.unread { background: var(--coral-soft); }
+  .notif-item .notif-meta { color: var(--ink-faint); font-size: 11px; margin-top: 2px; }
+  .notif-empty { padding: 16px 12px; color: var(--ink-faint); font-size: 12px; text-align: center; }
+  .notif-panel-head { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 11.5px; color: var(--ink-soft); }
+  .identity-box { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+  .identity-dot { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #fff; flex-shrink: 0; }
+  .identity-info { flex: 1; min-width: 0; }
+  .identity-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .identity-role { font-size: 10.5px; color: var(--ink-faint); text-transform: capitalize; }
+  .signout-btn { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 11px; }
+  .signout-btn:hover { color: var(--coral); }
+
+  .main { flex: 1; min-width: 0; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 22px 32px 0 32px; }
+  .page-title { font-size: 24px; }
+  .page-sub { color: var(--ink-soft); font-size: 13px; margin-top: 3px; }
+  .view-toggle { display: flex; gap: 8px; align-items: center; }
+  .content { padding: 20px 32px 48px 32px; }
+  .banner { background: var(--amber-soft); border: 1px solid var(--amber); color: var(--ink); padding: 10px 14px; border-radius: 8px; font-size: 12.5px; margin-bottom: 20px; display: flex; gap: 8px; align-items: flex-start; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .stat-num { font-family: "Fraunces", serif; font-size: 28px; font-weight: 560; }
+  .stat-label { color: var(--ink-soft); font-size: 12px; margin-top: 2px; }
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .panel h3 { font-size: 15px; margin-bottom: 14px; }
+  .arc-wrap { display: flex; align-items: center; gap: 20px; }
+  .arc-num { font-family: "Fraunces", serif; font-size: 34px; font-weight: 560; }
+  .arc-caption { color: var(--ink-soft); font-size: 12.5px; margin-top: 2px; max-width: 180px; }
+  .list-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .list-row:last-child { border-bottom: none; }
+  .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .tag-team-education { background: var(--teal-soft); color: var(--teal); }
+  .tag-team-planning { background: var(--coral-soft); color: var(--coral); }
+  .tag-team-delight { background: var(--sage-soft); color: var(--sage); }
+  .tag-team-marketing { background: var(--amber-soft); color: var(--amber); }
+  .tag-team-corporate { background: var(--line); color: var(--ink-soft); }
+  .status-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-soft); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .status-dot.planning { background: var(--ink-faint); }
+  .status-dot.active { background: var(--teal); }
+  .status-dot.review { background: var(--amber); }
+  .status-dot.launched { background: var(--sage); }
+  .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
+  select { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 7px 10px; color: var(--ink); }
+  .btn { border: 1px solid var(--teal); background: var(--teal); color: #fff; padding: 8px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .btn:hover { opacity: 0.92; }
+  .btn-ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+  .btn-ghost:hover { background: var(--teal-soft); }
+  .btn-text { border: none; background: none; color: var(--teal); cursor: pointer; font-size: 13px; padding: 4px; }
+  .projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .project-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; cursor: pointer; transition: border-color .15s; }
+  .project-card:hover { border-color: var(--teal); }
+  .project-card.static { cursor: default; }
+  .project-card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+  .project-name { font-family: "Fraunces", serif; font-size: 16px; font-weight: 560; margin-bottom: 3px; }
+  .project-client { font-size: 12px; color: var(--ink-soft); }
+  .progress-bar { height: 5px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 12px 0 8px 0; }
+  .progress-fill { height: 100%; background: var(--teal); border-radius: 4px; }
+  .project-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-faint); }
+  .board-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .board-col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-height: 120px; }
+  .board-col h4 { font-size: 12.5px; color: var(--ink-soft); font-weight: 500; margin: 0 0 10px 0; display: flex; justify-content: space-between; }
+  .task-card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; margin-bottom: 8px; font-size: 12.5px; }
+  .task-title { margin-bottom: 6px; }
+  .task-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .task-meta select { font-size: 11px; padding: 3px 5px; border-radius: 5px; }
+  .assignee-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-soft); }
+  .task-reassign-select { border: none; background: none; padding: 0; font-size: 11px; color: var(--ink-soft); max-width: 78px; }
+  .due-overdue { color: var(--coral); font-weight: 500; }
+  .add-task-row { margin-top: 6px; }
+  .add-task-row input, .add-task-row select { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; background: var(--panel); }
+  .timeline-row { display: grid; grid-template-columns: 190px 1fr; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .timeline-row:last-child { border-bottom: none; }
+  .timeline-track { position: relative; height: 22px; background: var(--bg); border-radius: 20px; }
+  .timeline-bar { position: absolute; top: 0; height: 100%; border-radius: 20px; display: flex; align-items: center; padding: 0 10px; font-size: 10.5px; color: #fff; white-space: nowrap; overflow: hidden; }
+  .axis-row { display: grid; grid-template-columns: 190px 1fr; margin-bottom: 8px; }
+  .axis-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-faint); }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); background: none; border: none; cursor: pointer; font-size: 13px; margin-bottom: 10px; padding: 0; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--ink-soft); }
+  .client-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; background: var(--coral-soft); color: var(--coral); font-size: 12px; margin-bottom: 16px; }
+
+  .detail-backdrop { position: fixed; inset: 0; background: rgba(20,24,22,0.28); display: flex; justify-content: flex-end; z-index: 20; }
+  .detail-panel { width: 480px; max-width: 92vw; height: 100%; background: var(--panel); border-left: 1px solid var(--line); padding: 22px 26px 0 26px; overflow-y: auto; box-shadow: -10px 0 28px rgba(20,24,22,0.10); animation: slideInPanel .16s ease-out; }
+  @keyframes slideInPanel { from { transform: translateX(16px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  .detail-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .icon-btn { border: none; background: none; cursor: pointer; color: var(--ink-soft); width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .icon-btn:hover { background: var(--teal-soft); color: var(--ink); }
+  .icon-btn svg { width: 15px; height: 15px; }
+  .complete-check { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 12px; background: var(--panel); cursor: pointer; font-size: 12.5px; color: var(--ink-soft); }
+  .complete-check.done { background: var(--sage-soft); border-color: var(--sage); color: var(--sage); }
+  .complete-check input { display: none; }
+  .detail-title { font-family: "Fraunces", serif; font-size: 21px; font-weight: 560; margin: 4px 0 18px 0; line-height: 1.3; }
+  .field-table { border-top: 1px solid var(--line); margin-bottom: 20px; }
+  .field-table-row { display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .field-table-row .ft-label { color: var(--ink-soft); font-size: 12.5px; }
+  .field-table-row select, .field-table-row input { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 5px 6px; width: 100%; }
+  .field-table-row select:hover, .field-table-row input:hover { border-color: var(--line); background: var(--bg); }
+  .ft-assignee { display: flex; align-items: center; gap: 8px; }
+  .section-label { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .subtask-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .subtask-row input[type="checkbox"] { width: 15px; height: 15px; }
+  .subtask-row.done span { text-decoration: line-through; color: var(--ink-faint); }
+  .subtask-assignee-select { border: none; background: none; font-size: 11px; color: var(--ink-soft); max-width: 90px; }
+  .subtask-add { display: flex; gap: 6px; margin-top: 4px; }
+  .subtask-add input { flex: 1; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--bg); }
+  .tabs-row { display: flex; gap: 18px; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+  .tab-btn { border: none; background: none; cursor: pointer; padding: 8px 0; font-size: 13px; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn.active { color: var(--ink); border-bottom-color: var(--teal); font-weight: 500; }
+  .activity-row { display: flex; gap: 8px; padding: 7px 0; font-size: 12.5px; color: var(--ink-soft); align-items: flex-start; }
+  .activity-row .identity-dot { width: 20px; height: 20px; font-size: 9px; flex-shrink: 0; }
+  .comment-row { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .comment-row:last-child { border-bottom: none; }
+  .comment-body { flex: 1; min-width: 0; }
+  .comment-mention { color: var(--teal); font-weight: 500; }
+  .comment-input-bar { position: sticky; bottom: 0; background: var(--panel); padding: 12px 0 20px 0; margin-top: 6px; }
+  .mention-dropdown { position: absolute; z-index: 25; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 16px rgba(20,24,22,0.14); width: 200px; overflow: hidden; }
+  .mention-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 12.5px; }
+  .mention-option:hover, .mention-option.active { background: var(--teal-soft); }
+
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(20,24,22,0.35); display: flex; align-items: center; justify-content: center; z-index: 20; }
+  .modal { background: var(--panel); border-radius: 14px; padding: 24px; width: 380px; border: 1px solid var(--line); max-height: 88vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 14px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; }
+  .field input, .field select { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--bg); }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+
+  @media (max-width: 760px) {
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; flex-direction: row; align-items: center; padding: 12px 16px; overflow-x: auto; }
+    nav.primary-nav { flex-direction: row; }
+    .sidebar-foot { display: none; }
+    .stat-row, .board-cols { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .content { padding: 16px; }
+  }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="auth-wrap" id="auth-wrap">
+  <div class="auth-card">
+    <svg class="auth-mark" viewBox="0 0 26 26" fill="none"><path d="M3 15 C 8 6, 18 6, 23 15" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round"/></svg>
+    <h1>DSD Projects</h1>
+    <p>Sign in with your email — staff and clients both use this.</p>
+    <input id="auth-email" type="email" placeholder="you@digitalsmiledesign.com" />
+    <button class="btn" id="auth-send" style="width:100%;">Send magic link</button>
+    <div class="auth-status" id="auth-status"></div>
+  </div>
+</div>
+
+<div class="app" id="app-root" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 26 26" fill="none"><path d="M3 15 C 8 6, 18 6, 23 15" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div><div class="brand-name">DSD</div><div class="brand-sub">Projects</div></div>
+    </div>
+    <nav class="primary-nav" id="primary-nav">
+      <button class="nav-item" data-view="dashboard"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="6" height="6" rx="1.2"/><rect x="11" y="3" width="6" height="6" rx="1.2"/><rect x="3" y="11" width="6" height="6" rx="1.2"/><rect x="11" y="11" width="6" height="6" rx="1.2"/></svg>Dashboard</button>
+      <button class="nav-item" data-view="projects"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="14" height="12" rx="1.6"/><path d="M3 8h14"/></svg>Projects</button>
+      <button class="nav-item" data-view="portfolios"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="14" height="4" rx="1.2"/><rect x="3" y="11" width="14" height="4" rx="1.2"/></svg>Portfolios</button>
+      <button class="nav-item" data-view="timeline"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h9M3 14h11"/></svg>Timeline</button>
+      <button class="nav-item" data-view="team"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="2.6"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6M12 16c.2-2 1.6-3.4 3.3-3.4 2 0 3.7 1.6 4.2 3.7"/></svg>Team</button>
+      <button class="nav-item" data-view="client"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/></svg>Client projects</button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="notif-row" id="notif-row">
+        <button class="notif-btn" id="notif-btn"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 8a4 4 0 0 1 8 0c0 3 1 4 1.5 4.5H4.5C5 12 6 11 6 8Z"/><path d="M8.3 15a1.7 1.7 0 0 0 3.4 0"/></svg>Notifications<span class="notif-badge" id="notif-badge" style="display:none;">0</span></button>
+      </div>
+      <div class="identity-box">
+        <div class="identity-dot" id="identity-dot">–</div>
+        <div class="identity-info"><div class="identity-name" id="identity-name">–</div><div class="identity-role" id="identity-role">–</div></div>
+        <button class="signout-btn" id="signout-btn">Sign out</button>
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div><h1 class="page-title" id="page-title">Dashboard</h1><div class="page-sub" id="page-sub"></div></div>
+      <div class="view-toggle" id="team-filter-wrap" style="display:none;"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+
+<div class="app" id="client-root" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 26 26" fill="none"><path d="M3 15 C 8 6, 18 6, 23 15" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <div><div class="brand-name">DSD</div><div class="brand-sub">Your projects</div></div>
+    </div>
+    <div class="sidebar-foot" style="margin-top:auto;">
+      <div class="identity-box">
+        <div class="identity-dot" id="client-identity-dot">–</div>
+        <div class="identity-info"><div class="identity-name" id="client-identity-name">–</div><div class="identity-role">Client</div></div>
+        <button class="signout-btn" id="client-signout-btn">Sign out</button>
+      </div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar"><div><h1 class="page-title">Your projects</h1><div class="page-sub">Shared with you by DSD</div></div></div>
+    <div class="content" id="client-content"></div>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const SUPABASE_URL = "https://yxevnyyzezfdsbclhvvp.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4ZXZueXl6ZXpmZHNiY2xodnZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1NTAyNzIsImV4cCI6MjEwNTEyNjI3Mn0.lzNi8WSV1e7PgumfdrDZtd3OmPs9J8CP1PXftBu0OFQ";
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const TEAMS = ["Education", "Planning Center", "Delight", "Marketing", "Corporate"];
+  const TEAM_CLASS = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Delight": "tag-team-delight", "Marketing": "tag-team-marketing", "Corporate": "tag-team-corporate" };
+  const STATUSES = ["planning", "active", "review", "launched"];
+  const TASK_COLS = [{ key: "todo", label: "To do" }, { key: "doing", label: "In progress" }, { key: "review", label: "Review" }, { key: "done", label: "Done" }];
+  const STATUS_LABEL = { todo: "To do", doing: "In progress", review: "Review", done: "Done" };
+
+  let me = null; // { id, email, name, team, role }
+  let state = {
+    view: "dashboard",
+    projects: [], tasks: [], people: [], clients: [], portfolios: [],
+    notifications: [], progressMap: {},
+    selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all"
+  };
+  let channels = {};
+
+  const el = (sel) => document.querySelector(sel);
+  const content = () => el("#content");
+
+  function fmtDate(d) {
+    if (!d) return "—";
+    const dt = new Date(d + "T00:00:00");
+    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  function isOverdue(dueDate, status) {
+    if (status === "done" || !dueDate) return false;
+    return new Date(dueDate + "T00:00:00") < new Date(new Date().toDateString());
+  }
+  function initials(name) {
+    if (!name) return "?";
+    return name.trim().split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase();
+  }
+  function colorForName(name) {
+    const palette = ["#2B5F5C", "#C97B63", "#5F8467", "#B9873E", "#6E7FA8", "#A0668C"];
+    let h = 0;
+    for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
+    return palette[h % palette.length];
+  }
+  function escapeHtml(s) { return (s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function highlightMentions(text) {
+    let html = escapeHtml(text);
+    state.people.forEach(p => { const marker = "@" + escapeHtml(p.name); html = html.split(marker).join(`<span class="comment-mention">${marker}</span>`); });
+    return html;
+  }
+  function personById(id) { return state.people.find(p => p.id === id) || state.clients.find(p => p.id === id); }
+  function personIdByName(name) { const p = state.people.find(p => p.name === name); return p ? p.id : null; }
+  function projectProgress(projectId) { return state.progressMap[projectId] || 0; }
+
+  // =========================================================
+  // AUTH
+  // =========================================================
+  el("#auth-send").addEventListener("click", async () => {
+    const email = el("#auth-email").value.trim();
+    const statusEl = el("#auth-status");
+    if (!email) return;
+    statusEl.className = "auth-status";
+    statusEl.textContent = "Sending…";
+    try {
+      const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+      if (error) throw error;
+      statusEl.textContent = "Check your email for a sign-in link.";
+    } catch (e) {
+      statusEl.className = "auth-status error";
+      statusEl.textContent = e.message || "Couldn't send the link. Try again.";
+    }
+  });
+
+  async function handleSignedIn(session) {
+    let profile = null;
+    for (let i = 0; i < 6; i++) {
+      const { data, error } = await sb.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+      if (data) { profile = data; break; }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (!profile) {
+      el("#auth-status").className = "auth-status error";
+      el("#auth-status").textContent = "Signed in, but your profile isn't ready yet — refresh in a moment.";
+      return;
+    }
+    me = { id: profile.id, email: profile.email, name: profile.name, team: profile.team, role: profile.role };
+    el("#auth-wrap").hidden = true;
+    if (me.role === "client") {
+      bootClient();
+    } else {
+      bootStaff();
+    }
+  }
+
+  function handleSignedOut() {
+    me = null;
+    Object.values(channels).forEach(ch => sb.removeChannel(ch));
+    channels = {};
+    el("#app-root").hidden = true;
+    el("#client-root").hidden = true;
+    el("#auth-wrap").hidden = false;
+    el("#auth-status").textContent = "";
+    el("#auth-email").value = "";
+  }
+
+  el("#signout-btn").addEventListener("click", () => sb.auth.signOut());
+  el("#client-signout-btn").addEventListener("click", () => sb.auth.signOut());
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_IN" && session) handleSignedIn(session);
+    else if (event === "SIGNED_OUT") handleSignedOut();
+  });
+  sb.auth.getSession().then(({ data }) => { if (data.session) handleSignedIn(data.session); });
+
+  // =========================================================
+  // CLIENT-ONLY SHELL
+  // =========================================================
+  async function bootClient() {
+    el("#client-root").hidden = false;
+    el("#client-identity-name").textContent = me.name;
+    el("#client-identity-dot").textContent = initials(me.name);
+    el("#client-identity-dot").style.background = colorForName(me.name);
+
+    async function loadAndRenderClientProjects() {
+      const { data: projects } = await sb.from("projects").select("*").order("start_date");
+      const { data: progress } = await sb.from("project_progress").select("*");
+      const progMap = {};
+      (progress || []).forEach(r => progMap[r.project_id] = r.progress_percent);
+      const wrap = el("#client-content");
+      if (!projects || !projects.length) {
+        wrap.innerHTML = `<div class="empty-state">No projects have been shared with you yet.</div>`;
+        return;
+      }
+      wrap.innerHTML = `<div class="projects-grid">${projects.map(p => `
+        <div class="project-card static">
+          <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div></div></div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${progMap[p.id]||0}%"></div></div>
+          <div class="project-meta">
+            <span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span>
+            <span>${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}</span>
+          </div>
+        </div>`).join("")}</div>`;
+    }
+    loadAndRenderClientProjects();
+    channels.clientProjects = sb.channel("client-projects")
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, loadAndRenderClientProjects)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, loadAndRenderClientProjects)
+      .subscribe();
+  }
+
+  // =========================================================
+  // STAFF APP BOOT
+  // =========================================================
+  async function bootStaff() {
+    el("#app-root").hidden = false;
+    el("#identity-name").textContent = me.name;
+    el("#identity-role").textContent = me.role;
+    el("#identity-dot").textContent = initials(me.name);
+    el("#identity-dot").style.background = colorForName(me.name);
+
+    setView("dashboard");
+
+    await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress()]);
+    render();
+    subscribeRealtime();
+    subscribeNotifications();
+  }
+
+  async function loadPeople() {
+    const { data } = await sb.from("profiles").select("*").eq("role", "staff").order("name");
+    state.people = data || [];
+  }
+  async function loadClients() {
+    const { data } = await sb.from("profiles").select("*").eq("role", "client").order("name");
+    state.clients = data || [];
+  }
+  async function loadPortfolios() {
+    const { data } = await sb.from("portfolios").select("*, project_portfolios(project_id)").order("name");
+    state.portfolios = (data || []).map(f => ({ id: f.id, name: f.name }));
+  }
+  async function loadProjects() {
+    const { data: projects } = await sb.from("projects").select("*").order("start_date");
+    const { data: pf } = await sb.from("project_portfolios").select("*");
+    const { data: pc } = await sb.from("project_clients").select("*, profiles(name)");
+    state.projects = (projects || []).map(p => ({
+      id: p.id, name: p.name, team: p.team, client: p.client_company, status: p.status,
+      startDate: p.start_date, endDate: p.end_date, visibleToClient: p.share_with_client,
+      portfolioIds: (pf || []).filter(r => r.project_id === p.id).map(r => r.portfolio_id),
+      clientIds: (pc || []).filter(r => r.project_id === p.id).map(r => r.client_id)
+    }));
+  }
+  async function loadTasks() {
+    const { data: tasks } = await sb.from("tasks").select("*");
+    const { data: tp } = await sb.from("task_projects").select("*");
+    state.tasks = (tasks || []).map(t => ({
+      id: t.id, title: t.title, description: t.description, status: t.status,
+      assignee: t.assignee_id ? (personById(t.assignee_id) || {}).name : "",
+      assigneeId: t.assignee_id, dueDate: t.due_date, estimatedHours: t.estimated_hours,
+      projectIds: (tp || []).filter(r => r.task_id === t.id).map(r => r.project_id)
+    }));
+  }
+  async function loadProgress() {
+    const { data } = await sb.from("project_progress").select("*");
+    const map = {};
+    (data || []).forEach(r => map[r.project_id] = r.progress_percent);
+    state.progressMap = map;
+  }
+
+  function subscribeRealtime() {
+    Object.values(channels).forEach(ch => sb.removeChannel(ch));
+    channels = {};
+    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress()]); render(); };
+    channels.main = sb.channel("staff-main")
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "portfolios" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_portfolios" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_clients" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_projects" }, refetchAll)
+      .subscribe();
+  }
+
+  // =========================================================
+  // NAV
+  // =========================================================
+  function setView(view) {
+    state.view = view;
+    state.selectedProjectId = null;
+    state.selectedPortfolioId = null;
+    document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+    render();
+  }
+  el("#primary-nav").addEventListener("click", (e) => { const btn = e.target.closest(".nav-item"); if (btn) setView(btn.dataset.view); });
+  el("#notif-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleNotifPanel(); });
+
+  // =========================================================
+  // WRITE HELPERS
+  // =========================================================
+  async function addProject(data) {
+    const { data: row } = await sb.from("projects").insert({
+      name: data.name, team: data.team, client_company: data.client, status: data.status,
+      start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient
+    }).select().single();
+    if (row && data.portfolioIds && data.portfolioIds.length) {
+      await sb.from("project_portfolios").insert(data.portfolioIds.map(fid => ({ project_id: row.id, portfolio_id: fid })));
+    }
+  }
+  async function updateProjectField(projectId, fields) {
+    const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company" };
+    const payload = {};
+    Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
+    await sb.from("projects").update(payload).eq("id", projectId);
+  }
+  async function addPortfolio(data) { await sb.from("portfolios").insert({ name: data.name }); }
+  async function addProjectToPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").insert({ project_id: projectId, portfolio_id: portfolioId }); }
+  async function removeProjectFromPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").delete().eq("project_id", projectId).eq("portfolio_id", portfolioId); }
+  async function addClientToProject(projectId, clientId) { await sb.from("project_clients").insert({ project_id: projectId, client_id: clientId }); }
+  async function removeClientFromProject(projectId, clientId) { await sb.from("project_clients").delete().eq("project_id", projectId).eq("client_id", clientId); }
+
+  async function addTask(data) {
+    const { data: row } = await sb.from("tasks").insert({
+      title: data.title, description: data.description || "", status: data.status || "todo",
+      assignee_id: data.assignee ? personIdByName(data.assignee) : null,
+      due_date: data.dueDate || null, estimated_hours: data.estimatedHours || 0
+    }).select().single();
+    if (!row) return;
+    await sb.from("task_projects").insert(data.projectIds.map(pid => ({ task_id: row.id, project_id: pid })));
+    await logActivity(row.id, "created this task");
+    if (data.assignee) createNotification(data.assignee, "assigned", { id: row.id, title: data.title, projectIds: data.projectIds }, projectById(data.projectIds[0]));
+  }
+  async function updateTaskField(taskId, fields) {
+    const map = { dueDate: "due_date", estimatedHours: "estimated_hours", assigneeId: "assignee_id" };
+    const payload = {};
+    Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
+    await sb.from("tasks").update(payload).eq("id", taskId);
+  }
+  function projectById(id) { return state.projects.find(p => p.id === id); }
+  async function logActivity(taskId, text) {
+    await sb.from("task_activity").insert({ task_id: taskId, author_id: me.id, kind: "activity", text });
+  }
+  async function updateTaskStatus(id, status) {
+    await updateTaskField(id, { status });
+    await logActivity(id, "changed the status to " + STATUS_LABEL[status]);
+  }
+  async function setAssignee(taskId, newAssignee) {
+    const t = state.tasks.find(t => t.id === taskId);
+    await updateTaskField(taskId, { assigneeId: newAssignee ? personIdByName(newAssignee) : null });
+    await logActivity(taskId, newAssignee ? ("assigned this task to " + newAssignee) : "unassigned this task");
+    if (newAssignee && t) createNotification(newAssignee, "assigned", t, projectById(t.projectIds[0]));
+  }
+  async function setDueDate(taskId, date) {
+    await updateTaskField(taskId, { dueDate: date });
+    await logActivity(taskId, date ? ("set the due date to " + fmtDate(date)) : "cleared the due date");
+  }
+  async function setEstimatedHours(taskId, hours) { await updateTaskField(taskId, { estimatedHours: hours }); }
+  async function updateTaskDescription(taskId, description) { await sb.from("tasks").update({ description }).eq("id", taskId); }
+  async function addTaskToProject(taskId, projectId) {
+    await sb.from("task_projects").insert({ task_id: taskId, project_id: projectId });
+    const p = projectById(projectId);
+    await logActivity(taskId, "added this task to " + (p ? p.name : "another project"));
+    if (detailTaskId === taskId) { closeTaskDetail(); openTaskDetail(taskId); }
+  }
+  async function removeTaskFromProject(taskId, projectId) {
+    const t = state.tasks.find(t => t.id === taskId);
+    if (t && t.projectIds.length <= 1) return;
+    await sb.from("task_projects").delete().eq("task_id", taskId).eq("project_id", projectId);
+    const p = projectById(projectId);
+    await logActivity(taskId, "removed this task from " + (p ? p.name : "a project"));
+    if (detailTaskId === taskId) { closeTaskDetail(); openTaskDetail(taskId); }
+  }
+
+  async function addComment(taskId, text) {
+    await sb.from("task_activity").insert({ task_id: taskId, author_id: me.id, kind: "comment", text });
+    notifyMentions(text, taskId);
+  }
+  function notifyMentions(text, taskId) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const project = projectById(task.projectIds[0]);
+    const notified = new Set();
+    state.people.forEach(p => {
+      const marker = "@" + p.name;
+      if (text.includes(marker) && !notified.has(p.name)) { notified.add(p.name); createNotification(p.name, "mentioned", task, project); }
+    });
+  }
+
+  async function addSubtask(taskId, title, assigneeName) {
+    const { count } = await sb.from("subtasks").select("*", { count: "exact", head: true }).eq("task_id", taskId);
+    await sb.from("subtasks").insert({ task_id: taskId, title, assignee_id: assigneeName ? personIdByName(assigneeName) : null, position: count || 0 });
+  }
+  async function toggleSubtask(subtaskId, done) { await sb.from("subtasks").update({ done }).eq("id", subtaskId); }
+  async function setSubtaskAssignee(subtaskId, assigneeName) { await sb.from("subtasks").update({ assignee_id: assigneeName ? personIdByName(assigneeName) : null }).eq("id", subtaskId); }
+
+  async function createNotification(recipientName, type, task, project) {
+    if (!recipientName || recipientName === me.name) return;
+    const recipientId = personIdByName(recipientName);
+    if (!recipientId) return;
+    await sb.from("notifications").insert({
+      recipient_id: recipientId, from_id: me.id, type,
+      task_id: task.id, project_id: (project && project.id) || (task.projectIds && task.projectIds[0]) || null
+    });
+  }
+
+  // =========================================================
+  // NOTIFICATIONS UI
+  // =========================================================
+  let notifPanelOpen = false;
+  async function subscribeNotifications() {
+    await refetchNotifications();
+    channels.notifications = sb.channel("notif-" + me.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: "recipient_id=eq." + me.id }, refetchNotifications)
+      .subscribe();
+  }
+  async function refetchNotifications() {
+    const { data } = await sb.from("notifications").select("*").eq("recipient_id", me.id).order("created_at", { ascending: false }).limit(30);
+    state.notifications = (data || []).map(n => ({
+      id: n.id, type: n.type, taskId: n.task_id, projectId: n.project_id, read: n.read, createdAt: n.created_at,
+      fromName: (personById(n.from_id) || {}).name || "Someone",
+      taskTitle: (state.tasks.find(t => t.id === n.task_id) || {}).title || "a task",
+      projectName: (projectById(n.project_id) || {}).name || ""
+    }));
+    renderNotifBadge();
+    if (notifPanelOpen) renderNotifPanel();
+  }
+  function renderNotifBadge() {
+    const badge = el("#notif-badge");
+    if (!badge) return;
+    const unread = state.notifications.filter(n => !n.read).length;
+    badge.style.display = unread ? "flex" : "none";
+    badge.textContent = unread > 9 ? "9+" : String(unread);
+  }
+  async function markNotificationRead(id) { await sb.from("notifications").update({ read: true }).eq("id", id); }
+  function toggleNotifPanel() {
+    notifPanelOpen = !notifPanelOpen;
+    if (notifPanelOpen) renderNotifPanel();
+    else { const p = document.getElementById("notif-panel"); if (p) p.remove(); }
+  }
+  function renderNotifPanel() {
+    let panel = document.getElementById("notif-panel");
+    if (!panel) { panel = document.createElement("div"); panel.className = "notif-panel"; panel.id = "notif-panel"; el("#notif-row").appendChild(panel); }
+    const items = state.notifications;
+    panel.innerHTML = `
+      <div class="notif-panel-head"><span>Notifications</span>${items.some(n=>!n.read) ? '<button class="btn-text" id="notif-mark-all" style="font-size:11px;">Mark all read</button>' : ''}</div>
+      ${items.length ? items.map(n => `
+        <button class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-project="${n.projectId}" data-task="${n.taskId}">
+          <div><strong>${escapeHtml(n.fromName)}</strong> ${n.type === 'mentioned' ? 'mentioned you on' : 'assigned you'} "${escapeHtml(n.taskTitle)}"</div>
+          <div class="notif-meta">${escapeHtml(n.projectName)} · ${new Date(n.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
+        </button>`).join("") : `<div class="notif-empty">No notifications yet.</div>`}`;
+    const markAll = document.getElementById("notif-mark-all");
+    if (markAll) markAll.addEventListener("click", (e) => { e.stopPropagation(); items.filter(n=>!n.read).forEach(n => markNotificationRead(n.id)); });
+    panel.querySelectorAll(".notif-item").forEach(btn => {
+      btn.addEventListener("click", () => {
+        markNotificationRead(btn.dataset.id);
+        state.selectedProjectId = btn.dataset.project;
+        toggleNotifPanel();
+        render();
+        openTaskDetail(btn.dataset.task);
+      });
+    });
+  }
+  document.addEventListener("click", (e) => {
+    if (!notifPanelOpen) return;
+    if (e.target.closest("#notif-row")) return;
+    notifPanelOpen = false;
+    const p = document.getElementById("notif-panel"); if (p) p.remove();
+  });
+
+  // =========================================================
+  // VIEWS
+  // =========================================================
+  function renderDashboard() {
+    el("#page-title").textContent = "Dashboard";
+    el("#page-sub").textContent = "Everything launching across DSD";
+    el("#team-filter-wrap").style.display = "none";
+
+    const activeProjects = state.projects.filter(p => p.status !== "launched");
+    const allTasks = state.tasks;
+    const now = new Date(); now.setHours(0,0,0,0);
+    const weekAhead = new Date(now); weekAhead.setDate(now.getDate() + 7);
+    const dueThisWeek = allTasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
+    const overdue = allTasks.filter(t => isOverdue(t.dueDate, t.status));
+    const overallProgress = state.projects.length ? Math.round(state.projects.reduce((sum, p) => sum + projectProgress(p.id), 0) / state.projects.length) : 0;
+
+    const workload = {};
+    allTasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
+    const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
+    const upcoming = allTasks.filter(t => t.status !== "done" && t.dueDate).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
+    const circumference = 2 * Math.PI * 34;
+    const offset = circumference * (1 - overallProgress / 100);
+
+    content().innerHTML = `
+      <div class="stat-row">
+        <div class="stat-card"><div class="stat-num">${activeProjects.length}</div><div class="stat-label">Active projects</div></div>
+        <div class="stat-card"><div class="stat-num">${dueThisWeek.length}</div><div class="stat-label">Tasks due this week</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:${overdue.length ? 'var(--coral)' : 'var(--ink)'}">${overdue.length}</div><div class="stat-label">Overdue</div></div>
+        <div class="stat-card"><div class="stat-num">${state.projects.length}</div><div class="stat-label">Total projects</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="panel"><h3>Upcoming deadlines</h3>
+          ${upcoming.length ? upcoming.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${isOverdue(t.dueDate, t.status) ? 'due-overdue' : ''}" style="color: var(--ink-soft); font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due yet.</div>`}
+        </div>
+        <div class="panel"><h3>This month, overall</h3>
+          <div class="arc-wrap">
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle cx="44" cy="44" r="34" fill="none" stroke="var(--line)" stroke-width="8"/>
+              <circle cx="44" cy="44" r="34" fill="none" stroke="var(--teal)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 44 44)"/>
+            </svg>
+            <div><div class="arc-num">${overallProgress}%</div><div class="arc-caption">average completion across all active projects</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-top:18px;"><h3>Team workload (open hours)</h3>
+        ${workloadRows.length ? workloadRows.map(([name, hrs]) => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:18px;height:18px;font-size:9px;background:${colorForName(name)}">${initials(name)}</span>${escapeHtml(name)}</span><span>${hrs}h open</span></div>`).join("") : `<div class="empty-state">No hours logged yet.</div>`}
+      </div>`;
+  }
+
+  function renderProjects() {
+    el("#page-title").textContent = "Projects";
+    el("#page-sub").textContent = "Every project across every team";
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    wrap.innerHTML = `
+      <select id="team-filter-select"><option value="all">All teams</option>${TEAMS.map(t => `<option value="${t}" ${state.teamFilter===t?'selected':''}>${t}</option>`).join("")}</select>
+      <button class="btn" id="new-project-btn" style="margin-left:8px;">New project</button>`;
+    wrap.querySelector("#team-filter-select").value = state.teamFilter;
+    wrap.querySelector("#team-filter-select").addEventListener("change", (e) => { state.teamFilter = e.target.value; render(); });
+    wrap.querySelector("#new-project-btn").addEventListener("click", openNewProjectModal);
+
+    const filtered = state.projects.filter(p => state.teamFilter === "all" || p.team === state.teamFilter);
+    content().innerHTML = `<div class="projects-grid">
+      ${filtered.length ? filtered.map(p => {
+        const progress = projectProgress(p.id);
+        return `
+        <div class="project-card" data-id="${p.id}">
+          <div class="project-card-top">
+            <div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div>
+            <span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+          <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
+          <div style="margin-top:10px;" onclick="event.stopPropagation()">
+            ${p.portfolioIds.length ? `<div class="chip-row">${p.portfolioIds.map(fid => { const f = state.portfolios.find(f => f.id === fid); return f ? `<span class="tag" style="background:var(--line);color:var(--ink-soft);display:inline-flex;align-items:center;gap:4px;">📁 ${escapeHtml(f.name)}<button class="remove-from-portfolio-inline" data-pid="${p.id}" data-fid="${fid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("")}</div>` : ""}
+            ${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).length ? `<select class="add-to-portfolio-inline" data-pid="${p.id}" style="font-size:11.5px;max-width:100%;"><option value="" selected disabled>+ Add to portfolio</option>${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("")}</select>` : ""}
+          </div>
+        </div>`;
+      }).join("") : `<div class="empty-state">No projects yet for this filter.</div>`}
+    </div>`;
+    content().querySelectorAll(".add-to-portfolio-inline").forEach(sel => {
+      sel.addEventListener("click", (e) => e.stopPropagation());
+      sel.addEventListener("change", (e) => { e.stopPropagation(); if (e.target.value) addProjectToPortfolio(e.target.dataset.pid, e.target.value); });
+    });
+    content().querySelectorAll(".remove-from-portfolio-inline").forEach(btn => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); removeProjectFromPortfolio(btn.dataset.pid, btn.dataset.fid); });
+    });
+    content().querySelectorAll(".project-card").forEach(card => {
+      card.addEventListener("click", () => { state.selectedProjectId = card.dataset.id; render(); });
+    });
+  }
+
+  function renderTaskBoard() {
+    const id = state.selectedProjectId;
+    const project = state.projects.find(p => p.id === id);
+    if (!project) { setView("projects"); return; }
+    el("#page-title").textContent = project.name;
+    el("#page-sub").textContent = `${project.team}${project.client ? " · " + project.client : ""}`;
+    el("#team-filter-wrap").style.display = "none";
+    const tasks = state.tasks.filter(t => t.projectIds.includes(id));
+
+    content().innerHTML = `
+      <button class="back-link" id="back-to-projects">← All projects</button>
+      <div class="panel" style="margin-bottom:16px;">
+        <div class="section-label" style="margin-bottom:10px;">Client access</div>
+        <div class="chip-row">
+          ${project.clientIds.map(cid => { const c = state.clients.find(c => c.id === cid); return c ? `<span class="tag" style="background:var(--coral-soft);color:var(--coral);display:inline-flex;align-items:center;gap:4px;">${escapeHtml(c.name)}<button class="remove-client-btn" data-cid="${cid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("") || `<span style="font-size:12px;color:var(--ink-faint);">No clients have access yet.</span>`}
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <select id="add-client-select" style="max-width:220px;">
+            <option value="" selected disabled>+ Give a client access</option>
+            ${state.clients.filter(c => !project.clientIds.includes(c.id)).map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.email)})</option>`).join("")}
+          </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);">
+            <input type="checkbox" id="share-toggle" ${project.visibleToClient ? "checked" : ""} /> Share with client
+          </label>
+        </div>
+      </div>
+      <div class="board-cols">
+        ${TASK_COLS.map(col => {
+          const colTasks = tasks.filter(t => t.status === col.key);
+          return `<div class="board-col"><h4>${col.label}<span>${colTasks.length}</span></h4>
+            ${colTasks.map(t => `
+              <div class="task-card">
+                <div class="task-title">${escapeHtml(t.title)}</div>
+                <div class="task-meta">
+                  <span class="identity-dot" style="width:16px;height:16px;font-size:8px;background:${colorForName(t.assignee)}">${t.assignee ? initials(t.assignee) : '?'}</span>
+                  <select class="task-reassign-select" data-id="${t.id}" style="flex:1;">
+                    <option value="" ${!t.assignee ? 'selected' : ''}>Unassigned</option>
+                    ${state.people.map(p => `<option value="${p.name}" ${p.name===t.assignee?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
+                  </select>
+                  <span class="${isOverdue(t.dueDate, t.status) ? 'due-overdue' : ''}">${fmtDate(t.dueDate)}</span>
+                </div>
+                <div style="margin-top:6px;"><select class="task-status-select" data-id="${t.id}">${TASK_COLS.map(c => `<option value="${c.key}" ${c.key===t.status?'selected':''}>${c.label}</option>`).join("")}</select></div>
+                <button class="btn-text" style="padding:4px 0 0 0;font-size:11px;" data-action="open-task" data-id="${t.id}">${t.description ? "View details & comments" : "Add details & comments"}</button>
+              </div>`).join("")}
+            ${col.key === "todo" ? `
+              <div class="add-task-row">
+                <input type="text" placeholder="New task title" class="new-task-title" />
+                ${state.people.length ? `<select class="new-task-assignee"><option value="">Unassigned</option>${state.people.map(p => `<option value="${p.name}">${escapeHtml(p.name)} · ${p.team||''}</option>`).join("")}</select>` : `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px;">No staff added yet.</div>`}
+                <input type="date" class="new-task-due" />
+                <input type="number" placeholder="Est. hours" class="new-task-hours" min="0" />
+                <textarea class="new-task-desc" placeholder="Description (optional)" rows="2" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px;background:var(--panel);resize:vertical;"></textarea>
+                <button class="btn-ghost" style="width:100%;" id="add-task-btn">+ Add task</button>
+              </div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>`;
+    el("#back-to-projects").addEventListener("click", () => { state.selectedProjectId = null; setView("projects"); });
+    el("#add-client-select").addEventListener("change", (e) => { if (e.target.value) addClientToProject(id, e.target.value); });
+    el("#share-toggle").addEventListener("change", (e) => updateProjectField(id, { visibleToClient: e.target.checked }));
+    content().querySelectorAll(".remove-client-btn").forEach(btn => btn.addEventListener("click", () => removeClientFromProject(id, btn.dataset.cid)));
+    content().querySelectorAll(".task-status-select").forEach(s => s.addEventListener("change", (e) => updateTaskStatus(e.target.dataset.id, e.target.value)));
+    content().querySelectorAll(".task-reassign-select").forEach(s => s.addEventListener("change", (e) => setAssignee(e.target.dataset.id, e.target.value)));
+    content().querySelectorAll('[data-action="open-task"]').forEach(btn => btn.addEventListener("click", () => openTaskDetail(btn.dataset.id)));
+    const addBtn = el("#add-task-btn");
+    if (addBtn) addBtn.addEventListener("click", () => {
+      const title = content().querySelector(".new-task-title").value.trim();
+      if (!title) return;
+      const assigneeField = content().querySelector(".new-task-assignee");
+      addTask({
+        projectIds: [id], title, assignee: assigneeField ? assigneeField.value : "", status: "todo",
+        dueDate: content().querySelector(".new-task-due").value || "",
+        estimatedHours: Number(content().querySelector(".new-task-hours").value) || 0,
+        description: content().querySelector(".new-task-desc").value.trim()
+      });
+    });
+  }
+
+  function renderPortfolios() {
+    el("#page-title").textContent = "Portfolios";
+    el("#page-sub").textContent = "Group related projects together";
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    wrap.innerHTML = `<button class="btn" id="new-portfolio-btn">New portfolio</button>`;
+    wrap.querySelector("#new-portfolio-btn").addEventListener("click", openNewPortfolioModal);
+    content().innerHTML = `<div class="projects-grid">
+      ${state.portfolios.length ? state.portfolios.map(f => {
+        const members = state.projects.filter(p => p.portfolioIds.includes(f.id));
+        const teams = Array.from(new Set(members.map(p => p.team)));
+        return `<div class="project-card" data-id="${f.id}">
+          <div class="project-card-top"><div><div class="project-name">${escapeHtml(f.name)}</div><div class="project-client">${members.length} project${members.length === 1 ? "" : "s"}</div></div></div>
+          <div class="chip-row" style="margin-top:8px;">${teams.length ? teams.map(t => `<span class="tag ${TEAM_CLASS[t] || ''}">${t}</span>`).join("") : `<span style="font-size:11.5px;color:var(--ink-faint);">No projects yet</span>`}</div>
+        </div>`;
+      }).join("") : `<div class="empty-state">No portfolios yet — group related projects together with "New portfolio."</div>`}
+    </div>`;
+    content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", () => { state.selectedPortfolioId = card.dataset.id; render(); }));
+  }
+
+  function renderPortfolioDetail() {
+    const id = state.selectedPortfolioId;
+    const portfolio = state.portfolios.find(f => f.id === id);
+    if (!portfolio) { state.selectedPortfolioId = null; setView("portfolios"); return; }
+    el("#page-title").textContent = portfolio.name;
+    el("#page-sub").textContent = "Portfolio";
+    el("#team-filter-wrap").style.display = "none";
+    const members = state.projects.filter(p => p.portfolioIds.includes(id));
+    const nonMembers = state.projects.filter(p => !p.portfolioIds.includes(id));
+    content().innerHTML = `
+      <button class="back-link" id="back-to-portfolios">← All portfolios</button>
+      <div style="margin-bottom:16px;">
+        <select id="add-to-portfolio-select" style="max-width:260px;">
+          <option value="" selected disabled>+ Add a project to this portfolio</option>
+          ${nonMembers.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="projects-grid">
+        ${members.length ? members.map(p => { const progress = projectProgress(p.id); return `
+          <div class="project-card" data-id="${p.id}">
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+            <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
+            <button class="btn-text remove-from-portfolio-btn" data-pid="${p.id}" style="margin-top:8px;font-size:11px;">Remove from portfolio</button>
+          </div>`; }).join("") : `<div class="empty-state">No projects in this portfolio yet.</div>`}
+      </div>`;
+    el("#back-to-portfolios").addEventListener("click", () => { state.selectedPortfolioId = null; setView("portfolios"); });
+    el("#add-to-portfolio-select").addEventListener("change", (e) => { if (e.target.value) addProjectToPortfolio(e.target.value, id); });
+    content().querySelectorAll(".remove-from-portfolio-btn").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); removeProjectFromPortfolio(btn.dataset.pid, id); }));
+    content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", (e) => { if (e.target.closest(".remove-from-portfolio-btn")) return; state.selectedProjectId = card.dataset.id; render(); }));
+  }
+
+  function renderTimeline() {
+    el("#page-title").textContent = "Timeline";
+    el("#page-sub").textContent = "Every project, one calendar";
+    el("#team-filter-wrap").style.display = "none";
+    if (state.projects.length === 0) { content().innerHTML = `<div class="empty-state">No projects to show yet.</div>`; return; }
+    const starts = state.projects.map(p => new Date(p.startDate));
+    const ends = state.projects.map(p => new Date(p.endDate));
+    const minDate = new Date(Math.min(...starts)), maxDate = new Date(Math.max(...ends));
+    const totalSpan = Math.max(1, maxDate - minDate);
+    const statusColor = { planning: "var(--ink-faint)", active: "var(--teal)", review: "var(--amber)", launched: "var(--sage)" };
+    content().innerHTML = `<div class="panel">
+      <div class="axis-row"><div></div><div class="axis-labels"><span>${fmtDate(minDate.toISOString().slice(0,10))}</span><span>${fmtDate(maxDate.toISOString().slice(0,10))}</span></div></div>
+      ${state.projects.map(p => { const s = new Date(p.startDate), e = new Date(p.endDate); const left = ((s - minDate) / totalSpan) * 100; const width = Math.max(4, ((e - s) / totalSpan) * 100); return `
+        <div class="timeline-row"><div><div style="font-weight:500;">${escapeHtml(p.name)}</div><span class="tag ${TEAM_CLASS[p.team] || ''}" style="margin-top:4px;">${p.team}</span></div>
+        <div class="timeline-track"><div class="timeline-bar" style="left:${left}%; width:${width}%; background:${statusColor[p.status]};">${p.status}</div></div></div>`; }).join("")}
+    </div>`;
+  }
+
+  function renderTeam() {
+    el("#page-title").textContent = "Team";
+    el("#page-sub").textContent = "Everyone who has signed in";
+    el("#team-filter-wrap").style.display = "none";
+    content().innerHTML = `<div class="grid-2">
+      <div class="panel"><h3>Staff (${state.people.length})</h3>
+        ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}<span class="tag ${TEAM_CLASS[p.team] || ''}" style="margin-left:6px;">${p.team||'—'}</span></span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
+      </div>
+      <div class="panel"><h3>Clients (${state.clients.length})</h3>
+        ${state.clients.map(c => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(c.name)}">${initials(c.name)}</span>${escapeHtml(c.name)}</span></div>`).join("") || `<div class="empty-state">No clients have signed in yet.</div>`}
+      </div>
+    </div>
+    <div class="banner" style="margin-top:16px;"><span>◐</span><span>People appear here automatically the first time they sign in with their email — there's nothing to add manually.</span></div>`;
+  }
+
+  function renderClientPreview() {
+    el("#page-title").textContent = "Client projects";
+    el("#page-sub").textContent = "What clients see when a project is shared with them";
+    el("#team-filter-wrap").style.display = "none";
+    const shared = state.projects.filter(p => p.visibleToClient);
+    content().innerHTML = `
+      <div class="banner"><span>◐</span><span><strong>Staff preview.</strong> This shows every project with "Share with client" turned on and who has access.</span></div>
+      <div class="projects-grid">
+        ${shared.length ? shared.map(p => { const progress = projectProgress(p.id); return `
+          <div class="project-card" data-id="${p.id}">
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+            <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
+            <div style="margin-top:8px;font-size:11px;color:var(--ink-faint);">${p.clientIds.length} client${p.clientIds.length===1?'':'s'} with access</div>
+          </div>`; }).join("") : `<div class="empty-state">No projects are currently marked "Share with client."</div>`}
+      </div>`;
+    content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", () => { state.selectedProjectId = card.dataset.id; render(); }));
+  }
+
+  function render() {
+    if (state.selectedProjectId) { renderTaskBoard(); return; }
+    if (state.view === "dashboard") renderDashboard();
+    else if (state.view === "projects") renderProjects();
+    else if (state.view === "portfolios" && state.selectedPortfolioId) renderPortfolioDetail();
+    else if (state.view === "portfolios") renderPortfolios();
+    else if (state.view === "timeline") renderTimeline();
+    else if (state.view === "team") renderTeam();
+    else if (state.view === "client") renderClientPreview();
+  }
+
+  // =========================================================
+  // TASK DETAIL PANEL
+  // =========================================================
+  let detailTaskId = null, detailTab = "activity", detailActivity = [], detailSubtasks = [];
+
+  function closeTaskDetail() {
+    if (channels.taskActivity) { sb.removeChannel(channels.taskActivity); delete channels.taskActivity; }
+    if (channels.taskSubtasks) { sb.removeChannel(channels.taskSubtasks); delete channels.taskSubtasks; }
+    detailTaskId = null; detailTab = "activity";
+    el("#modal-root").innerHTML = "";
+  }
+
+  async function refetchDetailActivity(taskId) {
+    const { data } = await sb.from("task_activity").select("*").eq("task_id", taskId).order("created_at", { ascending: true });
+    detailActivity = (data || []).map(a => ({ author: (personById(a.author_id) || {}).name || "Someone", text: a.text, createdAt: a.created_at, kind: a.kind }));
+    renderCommentsInModal();
+  }
+  async function refetchDetailSubtasks(taskId) {
+    const { data } = await sb.from("subtasks").select("*").eq("task_id", taskId).order("position");
+    detailSubtasks = (data || []).map(s => ({ id: s.id, title: s.title, done: s.done, assignee: s.assignee_id ? (personById(s.assignee_id)||{}).name : "" }));
+    renderSubtasksInModal();
+  }
+
+  function renderCommentsInModal() {
+    const listEl = document.querySelector("#task-comments-list");
+    if (!listEl) return;
+    const items = detailTab === "comments" ? detailActivity.filter(c => c.kind === "comment") : detailActivity;
+    listEl.innerHTML = items.length ? items.map(c => {
+      if (c.kind === "activity") return `<div class="activity-row"><span class="identity-dot" style="background:${colorForName(c.author)};">${initials(c.author)}</span><span><strong style="color:var(--ink);">${escapeHtml(c.author)}</strong> ${escapeHtml(c.text)} · ${new Date(c.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div>`;
+      return `<div class="comment-row"><span class="identity-dot" style="width:22px;height:22px;font-size:9.5px;background:${colorForName(c.author)};flex-shrink:0;">${initials(c.author)}</span>
+        <div class="comment-body"><div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;"><span style="font-weight:500;color:var(--ink);">${escapeHtml(c.author)}</span><span style="white-space:nowrap;">${new Date(c.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div><div style="font-size:13px;">${highlightMentions(c.text)}</div></div></div>`;
+    }).join("") : `<div class="empty-state" style="padding:16px 0;">${detailTab === "comments" ? "No comments yet." : "No activity yet."}</div>`;
+  }
+
+  function renderSubtasksInModal() {
+    const wrap = document.querySelector("#td-subtasks-list");
+    if (!wrap) return;
+    wrap.innerHTML = detailSubtasks.length ? detailSubtasks.map(s => `
+      <div class="subtask-row ${s.done ? 'done' : ''}">
+        <input type="checkbox" data-id="${s.id}" class="subtask-check" ${s.done ? 'checked' : ''} />
+        <span style="flex:1;">${escapeHtml(s.title)}</span>
+        <span class="identity-dot" style="width:16px;height:16px;font-size:7.5px;background:${colorForName(s.assignee)};flex-shrink:0;">${s.assignee ? initials(s.assignee) : '?'}</span>
+        <select class="subtask-assignee-select" data-id="${s.id}">
+          <option value="" ${!s.assignee ? 'selected' : ''}>Unassigned</option>
+          ${state.people.map(p => `<option value="${p.name}" ${p.name === s.assignee ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join("")}
+        </select>
+      </div>`).join("") : `<div style="font-size:12px;color:var(--ink-faint);">No subtasks yet.</div>`;
+    wrap.querySelectorAll(".subtask-check").forEach(cb => cb.addEventListener("change", (e) => toggleSubtask(e.target.dataset.id, e.target.checked)));
+    wrap.querySelectorAll(".subtask-assignee-select").forEach(sel => sel.addEventListener("change", (e) => setSubtaskAssignee(e.target.dataset.id, e.target.value)));
+  }
+
+  function renderProjectsListInModal(taskId) {
+    const wrap = document.querySelector("#td-projects-list");
+    if (!wrap) return;
+    const t = state.tasks.find(t => t.id === taskId);
+    const ids = (t && t.projectIds) || [];
+    wrap.innerHTML = ids.map(pid => {
+      const p = projectById(pid);
+      if (!p) return "";
+      return `<span class="tag ${TEAM_CLASS[p.team] || ''}" style="display:inline-flex;align-items:center;gap:5px;">${escapeHtml(p.name)}${ids.length > 1 ? `<button data-pid="${pid}" class="remove-project-btn" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button>` : ""}</span>`;
+    }).join("");
+    wrap.querySelectorAll(".remove-project-btn").forEach(btn => btn.addEventListener("click", () => removeTaskFromProject(taskId, btn.dataset.pid)));
+  }
+
+  function attachMentionAutocomplete(textarea) {
+    let dropdown = null;
+    function removeDropdown() { if (dropdown) { dropdown.remove(); dropdown = null; } }
+    function getActiveQuery() {
+      const caret = textarea.selectionStart;
+      const match = textarea.value.slice(0, caret).match(/(?:^|\s)@([A-Za-z]*)$/);
+      return match ? match[1] : null;
+    }
+    function insertMention(name) {
+      const caret = textarea.selectionStart;
+      const rest = textarea.value.slice(caret);
+      const replaced = textarea.value.slice(0, caret).replace(/@([A-Za-z]*)$/, "@" + name + " ");
+      textarea.value = replaced + rest;
+      textarea.focus(); textarea.setSelectionRange(replaced.length, replaced.length);
+      removeDropdown();
+    }
+    textarea.addEventListener("input", () => {
+      const query = getActiveQuery();
+      if (query === null) { removeDropdown(); return; }
+      const matches = state.people.filter(p => p.name.toLowerCase().startsWith(query.toLowerCase())).slice(0, 5);
+      if (!matches.length) { removeDropdown(); return; }
+      if (!dropdown) { dropdown = document.createElement("div"); dropdown.className = "mention-dropdown"; textarea.parentElement.appendChild(dropdown); dropdown.style.left = "0px"; dropdown.style.top = (textarea.offsetTop + textarea.offsetHeight + 4) + "px"; }
+      dropdown.innerHTML = matches.map(p => `<div class="mention-option" data-name="${p.name}"><span class="identity-dot" style="width:18px;height:18px;font-size:8px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}</div>`).join("");
+      dropdown.querySelectorAll(".mention-option").forEach(opt => opt.addEventListener("mousedown", (e) => { e.preventDefault(); insertMention(opt.dataset.name); }));
+    });
+    textarea.addEventListener("keydown", (e) => { if (e.key === "Escape") removeDropdown(); });
+    textarea.addEventListener("blur", () => setTimeout(removeDropdown, 150));
+  }
+
+  function openTaskDetail(taskId) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    detailTaskId = taskId; detailTab = "activity"; detailActivity = []; detailSubtasks = [];
+    const root = el("#modal-root");
+    root.innerHTML = `
+      <div class="detail-backdrop" id="detail-backdrop"><div class="detail-panel">
+        <div class="detail-topbar">
+          <label class="complete-check ${task.status === 'done' ? 'done' : ''}"><input type="checkbox" id="td-complete" ${task.status === 'done' ? 'checked' : ''} />${task.status === 'done' ? '✓ Completed' : 'Mark complete'}</label>
+          <button class="icon-btn" id="td-close" title="Close"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+        </div>
+        <div class="detail-title">${escapeHtml(task.title)}</div>
+        <div class="field-table">
+          <div class="field-table-row"><span class="ft-label">Assignee</span><div class="ft-assignee"><span class="identity-dot" style="width:22px;height:22px;font-size:9px;background:${colorForName(task.assignee)}">${task.assignee ? initials(task.assignee) : '?'}</span>
+            <select id="td-assignee"><option value="" ${!task.assignee ? 'selected' : ''}>No assignee</option>${state.people.map(p => `<option value="${p.name}" ${p.name === task.assignee ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join("")}</select></div></div>
+          <div class="field-table-row"><span class="ft-label">Due date</span><input type="date" id="td-due" value="${task.dueDate || ''}" /></div>
+          <div class="field-table-row"><span class="ft-label">Status</span><select id="td-status">${TASK_COLS.map(c => `<option value="${c.key}" ${c.key === task.status ? 'selected' : ''}>${c.label}</option>`).join("")}</select></div>
+          <div class="field-table-row" style="align-items:flex-start;"><span class="ft-label" style="padding-top:6px;">Projects</span><div>
+            <div id="td-projects-list" class="chip-row"></div>
+            <select id="td-add-project" style="max-width:220px;"><option value="" selected disabled>+ Add to another project</option>${state.projects.filter(p => !task.projectIds.includes(p.id)).map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
+          </div></div>
+          <div class="field-table-row"><span class="ft-label">Est. hours</span><input type="number" id="td-hours" min="0" value="${task.estimatedHours || 0}" /></div>
+        </div>
+        <div class="section-label">Description</div>
+        <textarea id="td-description" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;margin-bottom:20px;">${escapeHtml(task.description || "")}</textarea>
+        <div class="section-label">Subtasks</div>
+        <div id="td-subtasks-list"></div>
+        <div class="subtask-add">
+          <input type="text" id="td-new-subtask" placeholder="Add a subtask" />
+          <select id="td-new-subtask-assignee" style="width:120px;"><option value="">Unassigned</option>${state.people.map(p => `<option value="${p.name}">${escapeHtml(p.name)}</option>`).join("")}</select>
+          <button class="btn-ghost" id="td-subtask-save">Add</button>
+        </div>
+        <div class="tabs-row" style="margin-top:22px;"><button class="tab-btn" data-tab="comments">Comments</button><button class="tab-btn active" data-tab="activity">All activity</button></div>
+        <div id="task-comments-list" style="max-height:220px;overflow-y:auto;"></div>
+        <div class="comment-input-bar">
+          <textarea id="td-new-comment" rows="2" placeholder="Add a comment… type @ to tag someone" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button class="btn" id="td-post-comment">Post comment</button></div>
+        </div>
+      </div></div>`;
+    el("#detail-backdrop").addEventListener("click", (e) => { if (e.target.id === "detail-backdrop") closeTaskDetail(); });
+    el("#td-close").addEventListener("click", closeTaskDetail);
+    el("#td-complete").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.checked ? "done" : "todo"); closeTaskDetail(); openTaskDetail(taskId); });
+    el("#td-assignee").addEventListener("change", (e) => setAssignee(taskId, e.target.value));
+    el("#td-due").addEventListener("change", (e) => setDueDate(taskId, e.target.value));
+    el("#td-status").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.value); closeTaskDetail(); openTaskDetail(taskId); });
+    el("#td-hours").addEventListener("change", (e) => setEstimatedHours(taskId, Number(e.target.value) || 0));
+    el("#td-add-project").addEventListener("change", (e) => { if (e.target.value) addTaskToProject(taskId, e.target.value); });
+    renderProjectsListInModal(taskId);
+
+    let lastDescription = task.description || "";
+    el("#td-description").addEventListener("blur", (e) => {
+      const val = e.target.value.trim();
+      if (val === lastDescription) return;
+      lastDescription = val;
+      updateTaskDescription(taskId, val);
+      logActivity(taskId, "changed the description");
+    });
+
+    el("#td-subtask-save").addEventListener("click", () => {
+      const input = el("#td-new-subtask");
+      const title = input.value.trim();
+      if (!title) return;
+      addSubtask(taskId, title, el("#td-new-subtask-assignee").value);
+      input.value = ""; el("#td-new-subtask-assignee").value = "";
+    });
+
+    document.querySelectorAll('.detail-panel .tab-btn').forEach(btn => {
+      btn.addEventListener("click", () => { detailTab = btn.dataset.tab; document.querySelectorAll('.detail-panel .tab-btn').forEach(b => b.classList.toggle("active", b === btn)); renderCommentsInModal(); });
+    });
+
+    el("#td-post-comment").addEventListener("click", () => {
+      const text = el("#td-new-comment").value.trim();
+      if (!text) return;
+      addComment(taskId, text);
+      el("#td-new-comment").value = "";
+    });
+    attachMentionAutocomplete(el("#td-new-comment"));
+
+    refetchDetailActivity(taskId);
+    refetchDetailSubtasks(taskId);
+    channels.taskActivity = sb.channel("activity-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "task_activity", filter: "task_id=eq." + taskId }, () => refetchDetailActivity(taskId)).subscribe();
+    channels.taskSubtasks = sb.channel("subtasks-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "subtasks", filter: "task_id=eq." + taskId }, () => refetchDetailSubtasks(taskId)).subscribe();
+  }
+
+  // =========================================================
+  // MODALS
+  // =========================================================
+  function openNewPortfolioModal() {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New portfolio</h3>
+      <div class="field"><label>Portfolio name</label><input id="fp-name" type="text" placeholder="e.g. September 2026 launches" /></div>
+      <div class="modal-actions"><button class="btn-ghost" id="fp-cancel">Cancel</button><button class="btn" id="fp-save">Create portfolio</button></div>
+    </div></div>`;
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#fp-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#fp-save").addEventListener("click", () => { const name = el("#fp-name").value.trim(); if (!name) return; addPortfolio({ name }); root.innerHTML = ""; });
+  }
+
+  function openNewProjectModal() {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New project</h3>
+      <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
+      <div class="field"><label>Team</label><select id="mp-team">${TEAMS.map(t => `<option>${t}</option>`).join("")}</select></div>
+      <div class="field"><label>Client (optional)</label><input id="mp-client" type="text" placeholder="Leave blank for internal" /></div>
+      <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
+      <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
+      <div class="field"><label>Status</label><select id="mp-status">${STATUSES.map(s => `<option>${s}</option>`).join("")}</select></div>
+      <div class="field" style="display:flex; align-items:center; gap:8px;"><input id="mp-visible" type="checkbox" style="width:auto;" /><label style="margin:0;">Share with client</label></div>
+      ${state.portfolios.length ? `<div class="field"><label>Portfolio (optional)</label><select id="mp-portfolio"><option value="">No portfolio</option>${state.portfolios.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("")}</select></div>` : ""}
+      <div class="modal-actions"><button class="btn-ghost" id="mp-cancel">Cancel</button><button class="btn" id="mp-save">Create project</button></div>
+    </div></div>`;
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#mp-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#mp-save").addEventListener("click", () => {
+      const name = el("#mp-name").value.trim();
+      if (!name) return;
+      const portfolioField = el("#mp-portfolio");
+      addProject({
+        name, team: el("#mp-team").value, client: el("#mp-client").value.trim(),
+        startDate: el("#mp-start").value || new Date().toISOString().slice(0,10),
+        endDate: el("#mp-end").value || new Date().toISOString().slice(0,10),
+        status: el("#mp-status").value, visibleToClient: el("#mp-visible").checked,
+        portfolioIds: (portfolioField && portfolioField.value) ? [portfolioField.value] : []
+      });
+      root.innerHTML = "";
+    });
+  }
+})();
+</script>
+</body>
+</html>
