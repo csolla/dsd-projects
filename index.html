@@ -86,7 +86,7 @@
   .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
   .stat-num { font-family: "Fraunces", serif; font-size: 28px; font-weight: 560; }
   .stat-label { color: var(--ink-soft); font-size: 12px; margin-top: 2px; }
-  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: stretch; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
   .panel h3 { font-size: 15px; margin-bottom: 14px; }
   .arc-wrap { display: flex; align-items: center; gap: 20px; }
@@ -762,7 +762,9 @@
     const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
     const pastDeadlines = overdue.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
     const upcomingDeadlines = dueThisWeek.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
-    const circumference = 2 * Math.PI * 34;
+    const statusCounts = {};
+    TASK_COLS.forEach(c => { statusCounts[c.key] = allTasks.filter(t => t.status === c.key).length; });
+    const circumference = 2 * Math.PI * 48;
     const offset = circumference * (1 - overallProgress / 100);
 
     content().innerHTML = `
@@ -781,13 +783,18 @@
             ${upcomingDeadlines.length ? upcomingDeadlines.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due in the next 7 days.</div>`}
           </div>
         </div>
-        <div class="panel"><h3>This month, overall</h3>
-          <div class="arc-wrap">
-            <svg width="88" height="88" viewBox="0 0 88 88">
-              <circle cx="44" cy="44" r="34" fill="none" stroke="var(--line)" stroke-width="8"/>
-              <circle cx="44" cy="44" r="34" fill="none" stroke="var(--teal)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 44 44)"/>
+        <div class="panel" style="display:flex;flex-direction:column;">
+          <h3>This month, overall</h3>
+          <div class="arc-wrap" style="justify-content:center;margin:14px 0 22px 0;">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--line)" stroke-width="10"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--teal)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"/>
             </svg>
-            <div><div class="arc-num">${overallProgress}%</div><div class="arc-caption">average completion across all active projects</div></div>
+            <div><div class="arc-num" style="font-size:38px;">${overallProgress}%</div><div class="arc-caption" style="max-width:150px;">average completion across all active projects</div></div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">
+            <div style="font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Tasks by status</div>
+            ${TASK_COLS.map(c => `<div class="list-row"><span>${c.label}</span><span style="font-weight:500;">${statusCounts[c.key]}</span></div>`).join("")}
           </div>
         </div>
       </div>
