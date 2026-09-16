@@ -135,6 +135,9 @@
   .assignee-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--ink-soft); }
   .task-reassign-select { border: none; background: none; padding: 0; font-size: 11px; color: var(--ink-soft); max-width: 78px; }
   .due-overdue { color: var(--coral); font-weight: 500; }
+  .due-red { color: var(--coral); font-weight: 600; }
+  .due-yellow { color: var(--amber); font-weight: 600; }
+  .due-blue { color: var(--teal); font-weight: 500; }
   .add-task-row { margin-top: 6px; }
   .add-task-row input, .add-task-row select { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; background: var(--panel); }
   .timeline-row { display: grid; grid-template-columns: 190px 1fr; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -311,6 +314,15 @@
   function isOverdue(dueDate, status) {
     if (status === "done" || !dueDate) return false;
     return new Date(dueDate + "T00:00:00") < new Date(new Date().toDateString());
+  }
+  function dueDateClass(dueDate, status) {
+    if (!dueDate || status === "done") return "";
+    const today = new Date(new Date().toDateString());
+    const due = new Date(dueDate + "T00:00:00");
+    const weekAhead = new Date(today); weekAhead.setDate(today.getDate() + 7);
+    if (due < today) return "due-red";
+    if (due <= weekAhead) return "due-yellow";
+    return "due-blue";
   }
   function initials(name) {
     if (!name) return "?";
@@ -761,7 +773,7 @@
       </div>
       <div class="grid-2">
         <div class="panel"><h3>Upcoming deadlines</h3>
-          ${upcoming.length ? upcoming.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${isOverdue(t.dueDate, t.status) ? 'due-overdue' : ''}" style="color: var(--ink-soft); font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due yet.</div>`}
+          ${upcoming.length ? upcoming.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due yet.</div>`}
         </div>
         <div class="panel"><h3>This month, overall</h3>
           <div class="arc-wrap">
@@ -851,7 +863,7 @@
                     <option value="" ${!t.assignee ? 'selected' : ''}>Unassigned</option>
                     ${state.people.map(p => `<option value="${p.name}" ${p.name===t.assignee?'selected':''}>${escapeHtml(p.name)}</option>`).join("")}
                   </select>
-                  <span class="${isOverdue(t.dueDate, t.status) ? 'due-overdue' : ''}">${fmtDate(t.dueDate)}</span>
+                  <span class="${dueDateClass(t.dueDate, t.status)}">${fmtDate(t.dueDate)}</span>
                 </div>
                 <div style="margin-top:6px;"><select class="task-status-select" data-id="${t.id}">${TASK_COLS.map(c => `<option value="${c.key}" ${c.key===t.status?'selected':''}>${c.label}</option>`).join("")}</select></div>
                 <button class="btn-text" style="padding:4px 0 0 0;font-size:11px;" data-action="open-task" data-id="${t.id}">${t.description ? "View details & comments" : "Add details & comments"}</button>
@@ -1047,7 +1059,7 @@
       <div class="subtask-row ${s.done ? 'done' : ''}">
         <input type="checkbox" data-id="${s.id}" class="subtask-check" ${s.done ? 'checked' : ''} />
         <span style="flex:1;">${escapeHtml(s.title)}</span>
-        ${s.dueDate ? `<span class="${isOverdue(s.dueDate, s.done ? 'done' : 'todo') ? 'due-overdue' : ''}" style="font-size:11px;">${fmtDate(s.dueDate)}</span>` : ""}
+        ${s.dueDate ? `<span class="${dueDateClass(s.dueDate, s.done ? 'done' : 'todo')}" style="font-size:11px;">${fmtDate(s.dueDate)}</span>` : ""}
         <span class="identity-dot" style="width:16px;height:16px;font-size:7.5px;background:${colorForName(s.assignee)};flex-shrink:0;">${s.assignee ? initials(s.assignee) : '?'}</span>
         <select class="subtask-assignee-select" data-id="${s.id}">
           <option value="" ${!s.assignee ? 'selected' : ''}>Unassigned</option>
