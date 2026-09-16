@@ -788,7 +788,10 @@
     content().innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <button class="back-link" id="back-to-projects" style="margin-bottom:0;">← All projects</button>
-        <button class="btn-text" id="open-project-settings">⚙ Project settings</button>
+        <div style="display:flex;gap:16px;align-items:center;">
+          <button class="btn" id="open-new-task-top">+ New task</button>
+          <button class="btn-text" id="open-project-settings">⚙ Project settings</button>
+        </div>
       </div>
       <div class="board-cols">
         ${TASK_COLS.map(col => {
@@ -822,6 +825,7 @@
       </div>`;
     el("#back-to-projects").addEventListener("click", () => { state.selectedProjectId = null; setView("projects"); });
     el("#open-project-settings").addEventListener("click", () => openProjectSettingsModal(id));
+    el("#open-new-task-top").addEventListener("click", () => openNewTaskModal(id));
     content().querySelectorAll(".task-status-select").forEach(s => s.addEventListener("change", (e) => updateTaskStatus(e.target.dataset.id, e.target.value)));
     content().querySelectorAll(".task-reassign-select").forEach(s => s.addEventListener("change", (e) => setAssignee(e.target.dataset.id, e.target.value)));
     content().querySelectorAll('[data-action="open-task"]').forEach(btn => btn.addEventListener("click", () => openTaskDetail(btn.dataset.id)));
@@ -1154,6 +1158,34 @@
   // =========================================================
   // MODALS
   // =========================================================
+  function openNewTaskModal(projectId) {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal">
+      <h3>New task</h3>
+      <div class="field"><label>Title</label><input id="nt-title" type="text" /></div>
+      <div class="field"><label>Assignee</label>
+        <select id="nt-assignee"><option value="">Unassigned</option>${state.people.map(p => `<option value="${p.name}">${escapeHtml(p.name)} · ${p.team||''}</option>`).join("")}</select>
+      </div>
+      <div class="field"><label>Due date</label><input id="nt-due" type="date" /></div>
+      <div class="field"><label>Status</label><select id="nt-status">${TASK_COLS.map(c => `<option value="${c.key}">${c.label}</option>`).join("")}</select></div>
+      <div class="field"><label>Est. hours</label><input id="nt-hours" type="number" min="0" /></div>
+      <div class="field"><label>Description (optional)</label><textarea id="nt-desc" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea></div>
+      <div class="modal-actions"><button class="btn-ghost" id="nt-cancel">Cancel</button><button class="btn" id="nt-save">Create task</button></div>
+    </div></div>`;
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#nt-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#nt-save").addEventListener("click", () => {
+      const title = el("#nt-title").value.trim();
+      if (!title) return;
+      addTask({
+        projectIds: [projectId], title, assignee: el("#nt-assignee").value, status: el("#nt-status").value,
+        dueDate: el("#nt-due").value || "", estimatedHours: Number(el("#nt-hours").value) || 0,
+        description: el("#nt-desc").value.trim()
+      });
+      root.innerHTML = "";
+    });
+  }
+
   function openProjectSettingsModal(projectId) {
     const project = state.projects.find(p => p.id === projectId);
     if (!project) return;
