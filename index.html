@@ -294,7 +294,7 @@
   let bootedUserId = null; // guards against re-booting on token-refresh SIGNED_IN events
   let state = {
     view: "dashboard",
-    projects: [], tasks: [], people: [], clients: [], portfolios: [],
+    projects: [], tasks: [], people: [], clients: [], portfolios: [], openSubtasks: [],
     notifications: [], progressMap: {},
     selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all"
   };
@@ -449,7 +449,7 @@
 
     setView("dashboard");
 
-    await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress()]);
+    await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]);
     render();
     subscribeRealtime();
     subscribeNotifications();
@@ -494,11 +494,17 @@
     (data || []).forEach(r => map[r.project_id] = r.progress_percent);
     state.progressMap = map;
   }
+  async function loadOpenSubtasks() {
+    const { data } = await sb.from("subtasks").select("assignee_id, estimated_hours").eq("done", false);
+    // Resolved to names at render time (via personById), since state.people
+    // may still be loading concurrently with this call.
+    state.openSubtasks = data || [];
+  }
 
   function subscribeRealtime() {
     Object.values(channels).forEach(ch => sb.removeChannel(ch));
     channels = {};
-    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress()]); render(); };
+    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]); render(); };
     channels.main = sb.channel("staff-main")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "portfolios" }, refetchAll)
@@ -507,6 +513,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "task_projects" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "subtasks" }, refetchAll)
       .subscribe();
   }
 
@@ -739,6 +746,7 @@
 
     const workload = {};
     allTasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
+    state.openSubtasks.forEach(s => { const name = s.assignee_id ? ((personById(s.assignee_id) || {}).name || "Unassigned") : "Unassigned"; workload[name] = (workload[name] || 0) + (Number(s.estimated_hours) || 0); });
     const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
     const upcoming = allTasks.filter(t => t.status !== "done" && t.dueDate).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
     const circumference = 2 * Math.PI * 34;
