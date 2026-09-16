@@ -290,6 +290,7 @@
   const STATUS_LABEL = { todo: "To do", doing: "In progress", review: "Review", done: "Done" };
 
   let me = null; // { id, email, name, team, role }
+  let bootedUserId = null; // guards against re-booting on token-refresh SIGNED_IN events
   let state = {
     view: "dashboard",
     projects: [], tasks: [], people: [], clients: [], portfolios: [],
@@ -363,6 +364,14 @@
     }
     me = { id: profile.id, email: profile.email, name: profile.name, team: profile.team, role: profile.role };
     el("#auth-wrap").hidden = true;
+    if (bootedUserId === me.id) {
+      // Already booted this session — this SIGNED_IN event is just Supabase
+      // re-validating the token (e.g. after switching browser tabs), not a
+      // real new sign-in. Don't reset the current view.
+      el(me.role === "client" ? "#client-root" : "#app-root").hidden = false;
+      return;
+    }
+    bootedUserId = me.id;
     if (me.role === "client") {
       bootClient();
     } else {
@@ -372,6 +381,7 @@
 
   function handleSignedOut() {
     me = null;
+    bootedUserId = null;
     Object.values(channels).forEach(ch => sb.removeChannel(ch));
     channels = {};
     el("#app-root").hidden = true;
@@ -811,15 +821,6 @@
                 <div style="margin-top:6px;"><select class="task-status-select" data-id="${t.id}">${TASK_COLS.map(c => `<option value="${c.key}" ${c.key===t.status?'selected':''}>${c.label}</option>`).join("")}</select></div>
                 <button class="btn-text" style="padding:4px 0 0 0;font-size:11px;" data-action="open-task" data-id="${t.id}">${t.description ? "View details & comments" : "Add details & comments"}</button>
               </div>`).join("")}
-            ${col.key === "todo" ? `
-              <div class="add-task-row">
-                <input type="text" placeholder="New task title" class="new-task-title" />
-                ${state.people.length ? `<select class="new-task-assignee"><option value="">Unassigned</option>${state.people.map(p => `<option value="${p.name}">${escapeHtml(p.name)} · ${p.team||''}</option>`).join("")}</select>` : `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px;">No staff added yet.</div>`}
-                <input type="date" class="new-task-due" />
-                <input type="number" placeholder="Est. hours" class="new-task-hours" min="0" />
-                <textarea class="new-task-desc" placeholder="Description (optional)" rows="2" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px;background:var(--panel);resize:vertical;"></textarea>
-                <button class="btn-ghost" style="width:100%;" id="add-task-btn">+ Add task</button>
-              </div>` : ""}
           </div>`;
         }).join("")}
       </div>`;
@@ -847,18 +848,6 @@
         const taskId = e.dataTransfer.getData("text/plain");
         const status = col.dataset.status;
         if (taskId && status) updateTaskStatus(taskId, status);
-      });
-    });
-    const addBtn = el("#add-task-btn");
-    if (addBtn) addBtn.addEventListener("click", () => {
-      const title = content().querySelector(".new-task-title").value.trim();
-      if (!title) return;
-      const assigneeField = content().querySelector(".new-task-assignee");
-      addTask({
-        projectIds: [id], title, assignee: assigneeField ? assigneeField.value : "", status: "todo",
-        dueDate: content().querySelector(".new-task-due").value || "",
-        estimatedHours: Number(content().querySelector(".new-task-hours").value) || 0,
-        description: content().querySelector(".new-task-desc").value.trim()
       });
     });
   }
