@@ -80,6 +80,11 @@
   .page-title { font-size: 24px; }
   .page-sub { color: var(--ink-soft); font-size: 13px; margin-top: 3px; }
   .view-toggle { display: flex; gap: 8px; align-items: center; }
+  .scope-btn { border: 1px solid var(--line); background: var(--panel); padding: 7px 14px; cursor: pointer; color: var(--ink-soft); font-size: 12.5px; }
+  .scope-btn:first-child { border-radius: 7px 0 0 7px; }
+  .scope-btn:last-child { border-radius: 0 7px 7px 0; }
+  .scope-btn + .scope-btn { border-left: none; }
+  .scope-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); }
   .content { padding: 20px 32px 48px 32px; }
   .banner { background: var(--amber-soft); border: 1px solid var(--amber); color: var(--ink); padding: 10px 14px; border-radius: 8px; font-size: 12.5px; margin-bottom: 20px; display: flex; gap: 8px; align-items: flex-start; }
   .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
@@ -299,7 +304,8 @@
     view: "dashboard",
     projects: [], tasks: [], people: [], clients: [], portfolios: [], openSubtasks: [],
     notifications: [], progressMap: {},
-    selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all"
+    selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all",
+    dashboardScope: "dsd", dashboardTeam: null
   };
   let channels = {};
 
@@ -342,6 +348,7 @@
   }
   function personById(id) { return state.people.find(p => p.id === id) || state.clients.find(p => p.id === id); }
   function personIdByName(name) { const p = state.people.find(p => p.name === name); return p ? p.id : null; }
+  function personByName(name) { return state.people.find(p => p.name === name); }
   function projectProgress(projectId) { return state.progressMap[projectId] || 0; }
 
   // =========================================================
@@ -744,35 +751,67 @@
   // VIEWS
   // =========================================================
   function renderDashboard() {
-    el("#page-title").textContent = "Dashboard";
-    el("#page-sub").textContent = "Everything launching across DSD";
-    el("#team-filter-wrap").style.display = "none";
+    const scope = state.dashboardScope;
+    if (scope === "team" && !state.dashboardTeam) state.dashboardTeam = me.team || TEAMS[0];
 
-    const activeProjects = state.projects.filter(p => p.status !== "launched");
-    const allTasks = state.tasks;
+    el("#page-title").textContent = "Dashboard";
+    el("#page-sub").textContent = scope === "dsd" ? "Everything launching across DSD" : scope === "team" ? `Team stats — ${state.dashboardTeam}` : `Your stats, ${me.name}`;
+
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    wrap.innerHTML = `
+      <div class="scope-toggle" style="display:flex;">
+        <button class="scope-btn ${scope==='dsd'?'active':''}" data-scope="dsd">DSD</button>
+        <button class="scope-btn ${scope==='team'?'active':''}" data-scope="team">Team</button>
+        <button class="scope-btn ${scope==='me'?'active':''}" data-scope="me">Me</button>
+      </div>
+      ${scope === "team" ? `<select id="dash-team-select" style="margin-left:10px;">${TEAMS.map(t => `<option value="${t}" ${t===state.dashboardTeam?'selected':''}>${t}</option>`).join("")}</select>` : ""}
+    `;
+    wrap.querySelectorAll(".scope-btn").forEach(btn => btn.addEventListener("click", () => { state.dashboardScope = btn.dataset.scope; render(); }));
+    const teamSelect = el("#dash-team-select");
+    if (teamSelect) teamSelect.addEventListener("change", (e) => { state.dashboardTeam = e.target.value; render(); });
+
+    // ---- filter data to the selected scope ----
+    let projects = state.projects;
+    let tasks = state.tasks;
+    let subtasksForWorkload = state.openSubtasks;
+    if (scope === "team") {
+      projects = state.projects.filter(p => p.team === state.dashboardTeam);
+      tasks = state.tasks.filter(t => { const p = personByName(t.assignee); return p && p.team === state.dashboardTeam; });
+      subtasksForWorkload = state.openSubtasks.filter(s => { const p = personById(s.assignee_id); return p && p.team === state.dashboardTeam; });
+    } else if (scope === "me") {
+      tasks = state.tasks.filter(t => t.assignee === me.name);
+      const myProjectIds = new Set(tasks.flatMap(t => t.projectIds));
+      projects = state.projects.filter(p => myProjectIds.has(p.id));
+      subtasksForWorkload = state.openSubtasks.filter(s => s.assignee_id === me.id);
+    }
+
+    const activeProjects = projects.filter(p => p.status !== "launched");
     const now = new Date(); now.setHours(0,0,0,0);
     const weekAhead = new Date(now); weekAhead.setDate(now.getDate() + 7);
-    const dueThisWeek = allTasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
-    const overdue = allTasks.filter(t => isOverdue(t.dueDate, t.status));
-    const overallProgress = state.projects.length ? Math.round(state.projects.reduce((sum, p) => sum + projectProgress(p.id), 0) / state.projects.length) : 0;
+    const dueThisWeek = tasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
+    const overdue = tasks.filter(t => isOverdue(t.dueDate, t.status));
+    const overallProgress = projects.length ? Math.round(projects.reduce((sum, p) => sum + projectProgress(p.id), 0) / projects.length) : 0;
 
     const workload = {};
-    allTasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
-    state.openSubtasks.forEach(s => { const name = s.assignee_id ? ((personById(s.assignee_id) || {}).name || "Unassigned") : "Unassigned"; workload[name] = (workload[name] || 0) + (Number(s.estimated_hours) || 0); });
+    tasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
+    subtasksForWorkload.forEach(s => { const name = s.assignee_id ? ((personById(s.assignee_id) || {}).name || "Unassigned") : "Unassigned"; workload[name] = (workload[name] || 0) + (Number(s.estimated_hours) || 0); });
     const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
     const pastDeadlines = overdue.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
     const upcomingDeadlines = dueThisWeek.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
     const statusCounts = {};
-    TASK_COLS.forEach(c => { statusCounts[c.key] = allTasks.filter(t => t.status === c.key).length; });
+    TASK_COLS.forEach(c => { statusCounts[c.key] = tasks.filter(t => t.status === c.key).length; });
     const circumference = 2 * Math.PI * 48;
     const offset = circumference * (1 - overallProgress / 100);
+    const progressCaption = scope === "dsd" ? "average completion across all active projects" : scope === "team" ? `average completion across ${state.dashboardTeam}'s projects` : "average completion across your projects";
+    const workloadTitle = scope === "me" ? "Your open hours" : "Team workload (open hours)";
 
     content().innerHTML = `
       <div class="stat-row">
         <div class="stat-card"><div class="stat-num">${activeProjects.length}</div><div class="stat-label">Active projects</div></div>
         <div class="stat-card"><div class="stat-num">${dueThisWeek.length}</div><div class="stat-label">Tasks due this week</div></div>
         <div class="stat-card"><div class="stat-num" style="color:${overdue.length ? 'var(--coral)' : 'var(--ink)'}">${overdue.length}</div><div class="stat-label">Overdue</div></div>
-        <div class="stat-card"><div class="stat-num">${state.projects.length}</div><div class="stat-label">Total projects</div></div>
+        <div class="stat-card"><div class="stat-num">${projects.length}</div><div class="stat-label">Total projects</div></div>
       </div>
       <div class="grid-2">
         <div style="display:flex;flex-direction:column;gap:18px;">
@@ -790,7 +829,7 @@
               <circle cx="60" cy="60" r="48" fill="none" stroke="var(--line)" stroke-width="10"/>
               <circle cx="60" cy="60" r="48" fill="none" stroke="var(--teal)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"/>
             </svg>
-            <div><div class="arc-num" style="font-size:38px;">${overallProgress}%</div><div class="arc-caption" style="max-width:150px;">average completion across all active projects</div></div>
+            <div><div class="arc-num" style="font-size:38px;">${overallProgress}%</div><div class="arc-caption" style="max-width:150px;">${progressCaption}</div></div>
           </div>
           <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">
             <div style="font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Tasks by status</div>
@@ -798,7 +837,7 @@
           </div>
         </div>
       </div>
-      <div class="panel" style="margin-top:18px;"><h3>Team workload (open hours)</h3>
+      <div class="panel" style="margin-top:18px;"><h3>${workloadTitle}</h3>
         ${workloadRows.length ? workloadRows.map(([name, hrs]) => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:18px;height:18px;font-size:9px;background:${colorForName(name)}">${initials(name)}</span>${escapeHtml(name)}</span><span>${hrs}h open</span></div>`).join("") : `<div class="empty-state">No hours logged yet.</div>`}
       </div>`;
   }
