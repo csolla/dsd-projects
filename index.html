@@ -760,7 +760,8 @@
     allTasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
     state.openSubtasks.forEach(s => { const name = s.assignee_id ? ((personById(s.assignee_id) || {}).name || "Unassigned") : "Unassigned"; workload[name] = (workload[name] || 0) + (Number(s.estimated_hours) || 0); });
     const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
-    const upcoming = allTasks.filter(t => t.status !== "done" && t.dueDate).sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
+    const pastDeadlines = overdue.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
+    const upcomingDeadlines = dueThisWeek.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
     const circumference = 2 * Math.PI * 34;
     const offset = circumference * (1 - overallProgress / 100);
 
@@ -772,8 +773,13 @@
         <div class="stat-card"><div class="stat-num">${state.projects.length}</div><div class="stat-label">Total projects</div></div>
       </div>
       <div class="grid-2">
-        <div class="panel"><h3>Upcoming deadlines</h3>
-          ${upcoming.length ? upcoming.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due yet.</div>`}
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <div class="panel"><h3>Past deadlines</h3>
+            ${pastDeadlines.length ? pastDeadlines.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing overdue.</div>`}
+          </div>
+          <div class="panel"><h3>Upcoming deadlines</h3>
+            ${upcomingDeadlines.length ? upcomingDeadlines.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due in the next 7 days.</div>`}
+          </div>
         </div>
         <div class="panel"><h3>This month, overall</h3>
           <div class="arc-wrap">
