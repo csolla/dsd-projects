@@ -274,6 +274,7 @@
 </div>
 
 <div id="modal-root"></div>
+<div id="subtask-modal-root"></div>
 
 <script>
 (function () {
@@ -617,8 +618,34 @@
     const { count } = await sb.from("subtasks").select("*", { count: "exact", head: true }).eq("task_id", taskId);
     await sb.from("subtasks").insert({ task_id: taskId, title, assignee_id: assigneeName ? personIdByName(assigneeName) : null, position: count || 0 });
   }
-  async function toggleSubtask(subtaskId, done) { await sb.from("subtasks").update({ done }).eq("id", subtaskId); }
-  async function setSubtaskAssignee(subtaskId, assigneeName) { await sb.from("subtasks").update({ assignee_id: assigneeName ? personIdByName(assigneeName) : null }).eq("id", subtaskId); }
+  async function updateSubtaskField(subtaskId, fields) {
+    const map = { dueDate: "due_date", estimatedHours: "estimated_hours" };
+    const payload = {};
+    Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
+    await sb.from("subtasks").update(payload).eq("id", subtaskId);
+  }
+  async function toggleSubtask(subtaskId, done) { await updateSubtaskField(subtaskId, { done }); }
+  async function setSubtaskAssignee(subtaskId, assigneeName, taskId) {
+    await updateSubtaskField(subtaskId, { assignee_id: assigneeName ? personIdByName(assigneeName) : null });
+    if (assigneeName && taskId) {
+      const t = state.tasks.find(t => t.id === taskId);
+      if (t) createNotification(assigneeName, "assigned", t, projectById(t.projectIds[0]));
+    }
+  }
+  async function setSubtaskDueDate(subtaskId, date) { await updateSubtaskField(subtaskId, { dueDate: date }); }
+  async function setSubtaskHours(subtaskId, hours) { await updateSubtaskField(subtaskId, { estimatedHours: hours }); }
+  async function updateSubtaskDescription(subtaskId, description) { await sb.from("subtasks").update({ description }).eq("id", subtaskId); }
+  async function addSubtaskComment(subtaskId, taskId, text) {
+    await sb.from("task_activity").insert({ task_id: taskId, subtask_id: subtaskId, author_id: me.id, kind: "comment", text });
+    const t = state.tasks.find(t => t.id === taskId);
+    if (!t) return;
+    const project = projectById(t.projectIds[0]);
+    const notified = new Set();
+    state.people.forEach(p => {
+      const marker = "@" + p.name;
+      if (text.includes(marker) && !notified.has(p.name)) { notified.add(p.name); createNotification(p.name, "mentioned", t, project); }
+    });
+  }
 
   async function createNotification(recipientName, type, task, project) {
     if (!recipientName || recipientName === me.name) return;
@@ -975,18 +1002,22 @@
   function closeTaskDetail() {
     if (channels.taskActivity) { sb.removeChannel(channels.taskActivity); delete channels.taskActivity; }
     if (channels.taskSubtasks) { sb.removeChannel(channels.taskSubtasks); delete channels.taskSubtasks; }
+    closeSubtaskDetail();
     detailTaskId = null; detailTab = "activity";
     el("#modal-root").innerHTML = "";
   }
 
   async function refetchDetailActivity(taskId) {
-    const { data } = await sb.from("task_activity").select("*").eq("task_id", taskId).order("created_at", { ascending: true });
+    const { data } = await sb.from("task_activity").select("*").eq("task_id", taskId).is("subtask_id", null).order("created_at", { ascending: true });
     detailActivity = (data || []).map(a => ({ author: (personById(a.author_id) || {}).name || "Someone", text: a.text, createdAt: a.created_at, kind: a.kind }));
     renderCommentsInModal();
   }
   async function refetchDetailSubtasks(taskId) {
     const { data } = await sb.from("subtasks").select("*").eq("task_id", taskId).order("position");
-    detailSubtasks = (data || []).map(s => ({ id: s.id, title: s.title, done: s.done, assignee: s.assignee_id ? (personById(s.assignee_id)||{}).name : "" }));
+    detailSubtasks = (data || []).map(s => ({
+      id: s.id, title: s.title, done: s.done, assignee: s.assignee_id ? (personById(s.assignee_id)||{}).name : "",
+      description: s.description || "", dueDate: s.due_date, estimatedHours: s.estimated_hours || 0
+    }));
     renderSubtasksInModal();
   }
 
@@ -1008,14 +1039,17 @@
       <div class="subtask-row ${s.done ? 'done' : ''}">
         <input type="checkbox" data-id="${s.id}" class="subtask-check" ${s.done ? 'checked' : ''} />
         <span style="flex:1;">${escapeHtml(s.title)}</span>
+        ${s.dueDate ? `<span class="${isOverdue(s.dueDate, s.done ? 'done' : 'todo') ? 'due-overdue' : ''}" style="font-size:11px;">${fmtDate(s.dueDate)}</span>` : ""}
         <span class="identity-dot" style="width:16px;height:16px;font-size:7.5px;background:${colorForName(s.assignee)};flex-shrink:0;">${s.assignee ? initials(s.assignee) : '?'}</span>
         <select class="subtask-assignee-select" data-id="${s.id}">
           <option value="" ${!s.assignee ? 'selected' : ''}>Unassigned</option>
           ${state.people.map(p => `<option value="${p.name}" ${p.name === s.assignee ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join("")}
         </select>
+        <button class="btn-text" style="font-size:11px;padding:0 0 0 2px;" data-action="open-subtask" data-id="${s.id}">Details</button>
       </div>`).join("") : `<div style="font-size:12px;color:var(--ink-faint);">No subtasks yet.</div>`;
     wrap.querySelectorAll(".subtask-check").forEach(cb => cb.addEventListener("change", (e) => toggleSubtask(e.target.dataset.id, e.target.checked)));
-    wrap.querySelectorAll(".subtask-assignee-select").forEach(sel => sel.addEventListener("change", (e) => setSubtaskAssignee(e.target.dataset.id, e.target.value)));
+    wrap.querySelectorAll(".subtask-assignee-select").forEach(sel => sel.addEventListener("change", (e) => setSubtaskAssignee(e.target.dataset.id, e.target.value, detailTaskId)));
+    wrap.querySelectorAll('[data-action="open-subtask"]').forEach(btn => btn.addEventListener("click", () => openSubtaskDetail(btn.dataset.id, detailTaskId)));
   }
 
   function renderProjectsListInModal(taskId) {
@@ -1142,6 +1176,90 @@
     refetchDetailSubtasks(taskId);
     channels.taskActivity = sb.channel("activity-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "task_activity", filter: "task_id=eq." + taskId }, () => refetchDetailActivity(taskId)).subscribe();
     channels.taskSubtasks = sb.channel("subtasks-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "subtasks", filter: "task_id=eq." + taskId }, () => refetchDetailSubtasks(taskId)).subscribe();
+  }
+
+  // =========================================================
+  // SUBTASK DETAIL PANEL — same shape as a task: assignee, due date,
+  // hours, description, comments. Layers on top of the task panel.
+  // =========================================================
+  let subtaskComments = [];
+
+  function closeSubtaskDetail() {
+    if (channels.subtaskComments) { sb.removeChannel(channels.subtaskComments); delete channels.subtaskComments; }
+    el("#subtask-modal-root").innerHTML = "";
+  }
+
+  async function refetchSubtaskComments(subtaskId) {
+    const { data } = await sb.from("task_activity").select("*").eq("subtask_id", subtaskId).order("created_at", { ascending: true });
+    subtaskComments = (data || []).map(a => ({ author: (personById(a.author_id) || {}).name || "Someone", text: a.text, createdAt: a.created_at }));
+    renderSubtaskComments();
+  }
+  function renderSubtaskComments() {
+    const listEl = document.querySelector("#sd-comments-list");
+    if (!listEl) return;
+    listEl.innerHTML = subtaskComments.length ? subtaskComments.map(c => `
+      <div class="comment-row"><span class="identity-dot" style="width:22px;height:22px;font-size:9.5px;background:${colorForName(c.author)};flex-shrink:0;">${initials(c.author)}</span>
+        <div class="comment-body"><div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;"><span style="font-weight:500;color:var(--ink);">${escapeHtml(c.author)}</span><span style="white-space:nowrap;">${new Date(c.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</span></div><div style="font-size:13px;">${highlightMentions(c.text)}</div></div></div>
+    `).join("") : `<div class="empty-state" style="padding:16px 0;">No comments yet.</div>`;
+  }
+
+  function openSubtaskDetail(subtaskId, parentTaskId) {
+    const s = detailSubtasks.find(s => s.id === subtaskId);
+    if (!s) return;
+    subtaskComments = [];
+    const root = el("#subtask-modal-root");
+    root.innerHTML = `
+      <div class="detail-backdrop" id="sd-backdrop" style="z-index:25;"><div class="detail-panel" style="width:420px;">
+        <div class="detail-topbar">
+          <label class="complete-check ${s.done ? 'done' : ''}"><input type="checkbox" id="sd-complete" ${s.done ? 'checked' : ''} />${s.done ? '✓ Completed' : 'Mark complete'}</label>
+          <button class="icon-btn" id="sd-close" title="Close"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+        </div>
+        <input id="sd-title" value="${escapeHtml(s.title)}" style="width:100%;border:none;background:none;font-family:'Fraunces',serif;font-size:19px;font-weight:560;margin:4px 0 18px 0;padding:2px 0;" />
+        <div class="field-table">
+          <div class="field-table-row"><span class="ft-label">Assignee</span><div class="ft-assignee"><span class="identity-dot" style="width:22px;height:22px;font-size:9px;background:${colorForName(s.assignee)}">${s.assignee ? initials(s.assignee) : '?'}</span>
+            <select id="sd-assignee"><option value="" ${!s.assignee ? 'selected' : ''}>No assignee</option>${state.people.map(p => `<option value="${p.name}" ${p.name === s.assignee ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join("")}</select></div></div>
+          <div class="field-table-row"><span class="ft-label">Due date</span><input type="date" id="sd-due" value="${s.dueDate || ''}" /></div>
+          <div class="field-table-row"><span class="ft-label">Est. hours</span><input type="number" id="sd-hours" min="0" value="${s.estimatedHours || 0}" /></div>
+        </div>
+        <div class="section-label">Description</div>
+        <textarea id="sd-description" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;margin-bottom:20px;">${escapeHtml(s.description || "")}</textarea>
+        <div class="section-label">Comments</div>
+        <div id="sd-comments-list" style="max-height:220px;overflow-y:auto;"></div>
+        <div class="comment-input-bar">
+          <textarea id="sd-new-comment" rows="2" placeholder="Add a comment… type @ to tag someone" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px;"><button class="btn" id="sd-post-comment">Post comment</button></div>
+        </div>
+      </div></div>`;
+    el("#sd-backdrop").addEventListener("click", (e) => { if (e.target.id === "sd-backdrop") closeSubtaskDetail(); });
+    el("#sd-close").addEventListener("click", closeSubtaskDetail);
+    el("#sd-complete").addEventListener("change", (e) => toggleSubtask(subtaskId, e.target.checked));
+    el("#sd-assignee").addEventListener("change", (e) => setSubtaskAssignee(subtaskId, e.target.value, parentTaskId));
+    el("#sd-due").addEventListener("change", (e) => setSubtaskDueDate(subtaskId, e.target.value));
+    el("#sd-hours").addEventListener("change", (e) => setSubtaskHours(subtaskId, Number(e.target.value) || 0));
+    let lastTitle = s.title;
+    el("#sd-title").addEventListener("blur", (e) => {
+      const val = e.target.value.trim();
+      if (!val || val === lastTitle) return;
+      lastTitle = val;
+      sb.from("subtasks").update({ title: val }).eq("id", subtaskId);
+    });
+    let lastDesc = s.description || "";
+    el("#sd-description").addEventListener("blur", (e) => {
+      const val = e.target.value.trim();
+      if (val === lastDesc) return;
+      lastDesc = val;
+      updateSubtaskDescription(subtaskId, val);
+    });
+    el("#sd-post-comment").addEventListener("click", () => {
+      const text = el("#sd-new-comment").value.trim();
+      if (!text) return;
+      addSubtaskComment(subtaskId, parentTaskId, text);
+      el("#sd-new-comment").value = "";
+    });
+    attachMentionAutocomplete(el("#sd-new-comment"));
+
+    refetchSubtaskComments(subtaskId);
+    channels.subtaskComments = sb.channel("subtask-activity-" + subtaskId).on("postgres_changes", { event: "*", schema: "public", table: "task_activity", filter: "subtask_id=eq." + subtaskId }, () => refetchSubtaskComments(subtaskId)).subscribe();
   }
 
   // =========================================================
