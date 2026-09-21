@@ -100,7 +100,7 @@
   .scope-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); }
   .content { padding: 20px 32px 48px 32px; }
   .banner { background: var(--amber-soft); border: 1px solid var(--amber); color: var(--ink); padding: 10px 14px; border-radius: 8px; font-size: 12.5px; margin-bottom: 20px; display: flex; gap: 8px; align-items: flex-start; }
-  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
   .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
   .stat-num { font-family: "Fraunces", serif; font-size: 28px; font-weight: 560; }
   .stat-label { color: var(--ink-soft); font-size: 12px; margin-top: 2px; }
@@ -348,7 +348,7 @@
   let bootedUserId = null; // guards against re-booting on token-refresh SIGNED_IN events
   let state = {
     view: "dashboard",
-    projects: [], tasks: [], people: [], clients: [], portfolios: [], openSubtasks: [],
+    projects: [], tasks: [], people: [], clients: [], portfolios: [], openSubtasks: [], allDependencies: [],
     notifications: [], progressMap: {},
     selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all",
     dashboardScope: "dsd", dashboardTeam: null
@@ -514,7 +514,7 @@
 
     setView("dashboard");
 
-    await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]);
+    await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks(), loadDependencies()]);
     render();
     populateSearchAssigneeOptions();
     subscribeRealtime();
@@ -567,11 +567,15 @@
     // may still be loading concurrently with this call.
     state.openSubtasks = data || [];
   }
+  async function loadDependencies() {
+    const { data } = await sb.from("task_dependencies").select("*");
+    state.allDependencies = data || [];
+  }
 
   function subscribeRealtime() {
     Object.values(channels).forEach(ch => sb.removeChannel(ch));
     channels = {};
-    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]); render(); populateSearchAssigneeOptions(); };
+    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks(), loadDependencies()]); render(); populateSearchAssigneeOptions(); };
     channels.main = sb.channel("staff-main")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "portfolios" }, refetchAll)
@@ -581,6 +585,7 @@
       .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "task_projects" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "subtasks" }, refetchAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_dependencies" }, refetchAll)
       .subscribe();
   }
 
@@ -919,6 +924,23 @@
   // =========================================================
   // VIEWS
   // =========================================================
+  function computeProjectRisk(p) {
+    const reasons = [];
+    const projTasks = state.tasks.filter(t => t.projectIds.includes(p.id));
+    const overdueCount = projTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
+    if (overdueCount) reasons.push(`${overdueCount} overdue task${overdueCount===1?'':'s'}`);
+    if (p.status !== "launched" && p.startDate && p.endDate) {
+      const start = new Date(p.startDate), end = new Date(p.endDate), today = new Date();
+      if (end > start) {
+        const elapsedPct = Math.max(0, Math.min(100, Math.round((today-start)/(end-start)*100)));
+        const completionPct = projectProgress(p.id);
+        if (elapsedPct > 20 && elapsedPct - completionPct > 25) reasons.push(`${elapsedPct}% of timeline used, only ${completionPct}% done`);
+      }
+    }
+    if (p.budget && p.budgetSpent > p.budget * 0.9) reasons.push(`Budget ${Math.round(p.budgetSpent/p.budget*100)}% spent`);
+    return reasons;
+  }
+
   function renderDashboard() {
     const scope = state.dashboardScope;
     if (scope === "team" && !state.dashboardTeam) state.dashboardTeam = me.team || TEAMS[0];
@@ -944,20 +966,25 @@
     let projects = state.projects;
     let tasks = state.tasks;
     let subtasksForWorkload = state.openSubtasks;
+    let unassignedTasks = [];
     if (scope === "team") {
       projects = state.projects.filter(p => p.team === state.dashboardTeam);
       tasks = state.tasks.filter(t => { const p = personByName(t.assignee); return p && p.team === state.dashboardTeam; });
       subtasksForWorkload = state.openSubtasks.filter(s => { const p = personById(s.assignee_id); return p && p.team === state.dashboardTeam; });
+      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.projectIds.some(pid => { const proj = projectById(pid); return proj && proj.team === state.dashboardTeam; }));
     } else if (scope === "me") {
       tasks = state.tasks.filter(t => t.assignee === me.name);
       const myProjectIds = new Set(tasks.flatMap(t => t.projectIds));
       projects = state.projects.filter(p => myProjectIds.has(p.id));
       subtasksForWorkload = state.openSubtasks.filter(s => s.assignee_id === me.id);
+    } else {
+      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done");
     }
 
     const activeProjects = projects.filter(p => p.status !== "launched");
     const now = new Date(); now.setHours(0,0,0,0);
     const weekAhead = new Date(now); weekAhead.setDate(now.getDate() + 7);
+    const twoWeeksAhead = new Date(now); twoWeeksAhead.setDate(now.getDate() + 14);
     const dueThisWeek = tasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
     const overdue = tasks.filter(t => isOverdue(t.dueDate, t.status));
     const overallProgress = projects.length ? Math.round(projects.reduce((sum, p) => sum + projectProgress(p.id), 0) / projects.length) : 0;
@@ -975,13 +1002,28 @@
     const progressCaption = scope === "dsd" ? "average completion across all active projects" : scope === "team" ? `average completion across ${state.dashboardTeam}'s projects` : "average completion across your projects";
     const workloadTitle = scope === "me" ? "Your open hours" : "Team workload (open hours)";
 
+    const blockedTasks = tasks.filter(t => t.status !== "done" && state.allDependencies.some(d => d.task_id === t.id && (state.tasks.find(x => x.id === d.depends_on_task_id) || {}).status !== "done"));
+    const riskyProjects = projects.map(p => ({ project: p, reasons: computeProjectRisk(p) })).filter(x => x.reasons.length).slice(0, 6);
+    const launchingSoon = projects.filter(p => p.status !== "launched" && p.endDate && new Date(p.endDate) <= twoWeeksAhead).sort((a,b) => new Date(a.endDate) - new Date(b.endDate)).slice(0, 6);
+
     content().innerHTML = `
       <div class="stat-row">
         <div class="stat-card"><div class="stat-num">${activeProjects.length}</div><div class="stat-label">Active projects</div></div>
         <div class="stat-card"><div class="stat-num">${dueThisWeek.length}</div><div class="stat-label">Tasks due this week</div></div>
         <div class="stat-card"><div class="stat-num" style="color:${overdue.length ? 'var(--coral)' : 'var(--ink)'}">${overdue.length}</div><div class="stat-label">Overdue</div></div>
+        <div class="stat-card"><div class="stat-num" style="color:${unassignedTasks.length ? 'var(--amber)' : 'var(--ink)'}">${unassignedTasks.length}</div><div class="stat-label">Unassigned tasks</div></div>
         <div class="stat-card"><div class="stat-num">${projects.length}</div><div class="stat-label">Total projects</div></div>
       </div>
+
+      <div class="panel" style="margin-bottom:18px;border-color:${riskyProjects.length ? 'var(--amber)' : 'var(--line)'};">
+        <h3>At risk</h3>
+        ${riskyProjects.length ? riskyProjects.map(({project, reasons}) => `
+          <div class="list-row" style="align-items:flex-start;">
+            <span style="cursor:pointer;" data-action="goto-risk-project" data-id="${project.id}">${escapeHtml(project.name)}</span>
+            <span style="text-align:right;">${reasons.map(r => `<div style="font-size:11px;color:var(--amber);">${escapeHtml(r)}</div>`).join("")}</span>
+          </div>`).join("") : `<div class="empty-state">Nothing flagged — everything's tracking on schedule.</div>`}
+      </div>
+
       <div class="grid-2">
         <div style="display:flex;flex-direction:column;gap:18px;">
           <div class="panel"><h3>Past deadlines</h3>
@@ -990,25 +1032,34 @@
           <div class="panel"><h3>Upcoming deadlines</h3>
             ${upcomingDeadlines.length ? upcomingDeadlines.map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span class="${dueDateClass(t.dueDate, t.status)}" style="font-size:12px;">${fmtDate(t.dueDate)}</span></div>`).join("") : `<div class="empty-state">Nothing due in the next 7 days.</div>`}
           </div>
-        </div>
-        <div class="panel" style="display:flex;flex-direction:column;">
-          <h3>This month, overall</h3>
-          <div class="arc-wrap" style="justify-content:center;margin:14px 0 22px 0;">
-            <svg width="120" height="120" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--line)" stroke-width="10"/>
-              <circle cx="60" cy="60" r="48" fill="none" stroke="var(--teal)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"/>
-            </svg>
-            <div><div class="arc-num" style="font-size:38px;">${overallProgress}%</div><div class="arc-caption" style="max-width:150px;">${progressCaption}</div></div>
+          <div class="panel"><h3>Blocked tasks</h3>
+            ${blockedTasks.length ? blockedTasks.slice(0,6).map(t => `<div class="list-row"><span>${escapeHtml(t.title)}</span><span style="font-size:11px;color:var(--ink-faint);">waiting on a dependency</span></div>`).join("") : `<div class="empty-state">Nothing blocked.</div>`}
           </div>
-          <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;">
-            <div style="font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Tasks by status</div>
-            ${TASK_COLS.map(c => `<div class="list-row"><span>${c.label}</span><span style="font-weight:500;">${statusCounts[c.key]}</span></div>`).join("")}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:18px;">
+          <div class="panel">
+            <h3>This month, overall</h3>
+            <div class="arc-wrap" style="justify-content:center;margin:14px 0 22px 0;">
+              <svg width="120" height="120" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--line)" stroke-width="10"/>
+                <circle cx="60" cy="60" r="48" fill="none" stroke="var(--teal)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" transform="rotate(-90 60 60)"/>
+              </svg>
+              <div><div class="arc-num" style="font-size:38px;">${overallProgress}%</div><div class="arc-caption" style="max-width:150px;">${progressCaption}</div></div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;">Tasks by status</div>
+              ${TASK_COLS.map(c => `<div class="list-row"><span>${c.label}</span><span style="font-weight:500;">${statusCounts[c.key]}</span></div>`).join("")}
+            </div>
+          </div>
+          <div class="panel"><h3>Launching soon</h3>
+            ${launchingSoon.length ? launchingSoon.map(p => `<div class="list-row"><span style="cursor:pointer;" data-action="goto-risk-project" data-id="${p.id}">${escapeHtml(p.name)}</span><span class="${dueDateClass(p.endDate, p.status==='launched'?'done':'todo')}" style="font-size:12px;">${fmtDate(p.endDate)}</span></div>`).join("") : `<div class="empty-state">Nothing launching in the next 2 weeks.</div>`}
           </div>
         </div>
       </div>
       <div class="panel" style="margin-top:18px;"><h3>${workloadTitle}</h3>
         ${workloadRows.length ? workloadRows.map(([name, hrs]) => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:18px;height:18px;font-size:9px;background:${colorForName(name)}">${initials(name)}</span>${escapeHtml(name)}</span><span>${hrs}h open</span></div>`).join("") : `<div class="empty-state">No hours logged yet.</div>`}
       </div>`;
+    content().querySelectorAll('[data-action="goto-risk-project"]').forEach(el2 => el2.addEventListener("click", () => { state.selectedProjectId = el2.dataset.id; render(); }));
   }
 
   function renderProjects() {
