@@ -53,6 +53,8 @@
   .search-box { display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; background: var(--bg); }
   .search-box svg { width: 15px; height: 15px; color: var(--ink-faint); flex-shrink: 0; }
   .search-box input { border: none; background: none; width: 100%; font-size: 12.5px; color: var(--ink); }
+  .search-filters { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  .search-filters select { width: 100%; font-size: 12px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
   .search-results { position: absolute; top: calc(100% + 4px); left: 8px; right: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(20,24,22,0.14); max-height: 360px; overflow-y: auto; z-index: 40; }
   .search-group-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-faint); padding: 8px 12px 4px 12px; }
   .search-result { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer; padding: 8px 12px; font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--line); }
@@ -253,6 +255,28 @@
       <div class="search-box">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m17 17-4-4"/></svg>
         <input id="global-search" placeholder="Search projects & tasks" autocomplete="off" />
+        <button id="search-filter-toggle" title="Filters" style="border:none;background:none;cursor:pointer;color:var(--ink-faint);padding:0;display:flex;">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="width:14px;height:14px;"><path d="M3 5h14M6 10h8M8.5 15h3"/></svg>
+        </button>
+      </div>
+      <div class="search-filters" id="search-filters" hidden>
+        <select id="sf-type"><option value="all">All types</option><option value="projects">Projects only</option><option value="tasks">Tasks only</option></select>
+        <select id="sf-team">
+          <option value="all">All teams</option>
+          <option value="Education">Education</option>
+          <option value="Planning Center">Planning Center</option>
+          <option value="Delight">Delight</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Corporate">Corporate</option>
+        </select>
+        <select id="sf-status">
+          <option value="all">Any status</option>
+          <option value="todo">To do</option>
+          <option value="doing">In progress</option>
+          <option value="review">Review</option>
+          <option value="done">Done</option>
+        </select>
+        <select id="sf-assignee"><option value="all">All people</option></select>
       </div>
     </div>
     <nav class="primary-nav" id="primary-nav">
@@ -492,6 +516,7 @@
 
     await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]);
     render();
+    populateSearchAssigneeOptions();
     subscribeRealtime();
     subscribeNotifications();
   }
@@ -546,7 +571,7 @@
   function subscribeRealtime() {
     Object.values(channels).forEach(ch => sb.removeChannel(ch));
     channels = {};
-    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]); render(); };
+    const refetchAll = async () => { await Promise.all([loadPeople(), loadClients(), loadPortfolios(), loadProjects(), loadTasks(), loadProgress(), loadOpenSubtasks()]); render(); populateSearchAssigneeOptions(); };
     channels.main = sb.channel("staff-main")
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, refetchAll)
       .on("postgres_changes", { event: "*", schema: "public", table: "portfolios" }, refetchAll)
@@ -572,16 +597,49 @@
   el("#primary-nav").addEventListener("click", (e) => { const btn = e.target.closest(".nav-item"); if (btn) setView(btn.dataset.view); });
 
   // ---- global search ----
+  let searchFilters = { type: "all", team: "all", status: "all", assignee: "all" };
+
+  function populateSearchAssigneeOptions() {
+    const sel = el("#sf-assignee");
+    if (!sel) return;
+    const current = searchFilters.assignee;
+    sel.innerHTML = `<option value="all">All people</option>` + state.people.map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join("");
+    sel.value = state.people.some(p => p.name === current) ? current : "all";
+  }
+
+  function computeSearchMatches(query) {
+    const q = query.trim().toLowerCase();
+    let projects = state.projects;
+    let tasks = state.tasks;
+    if (searchFilters.team !== "all") {
+      projects = projects.filter(p => p.team === searchFilters.team);
+      tasks = tasks.filter(t => { const person = personByName(t.assignee); return person && person.team === searchFilters.team; });
+    }
+    if (searchFilters.status !== "all") {
+      tasks = tasks.filter(t => t.status === searchFilters.status);
+    }
+    if (searchFilters.assignee !== "all") {
+      tasks = tasks.filter(t => t.assignee === searchFilters.assignee);
+    }
+    if (q) {
+      projects = projects.filter(p => p.name.toLowerCase().includes(q));
+      tasks = tasks.filter(t => t.title.toLowerCase().includes(q));
+    }
+    if (searchFilters.type === "projects") tasks = [];
+    if (searchFilters.type === "tasks") projects = [];
+    return { projects: projects.slice(0, 6), tasks: tasks.slice(0, 8) };
+  }
+
   function renderSearchResults(query) {
     const row = el("#search-row");
     let panel = document.getElementById("search-results");
-    const q = query.trim().toLowerCase();
-    if (!q) { if (panel) panel.remove(); return; }
-    const matchedProjects = state.projects.filter(p => p.name.toLowerCase().includes(q)).slice(0, 6);
-    const matchedTasks = state.tasks.filter(t => t.title.toLowerCase().includes(q)).slice(0, 8);
+    const hasQuery = query.trim() !== "";
+    const hasFilter = searchFilters.type !== "all" || searchFilters.team !== "all" || searchFilters.status !== "all" || searchFilters.assignee !== "all";
+    if (!hasQuery && !hasFilter) { if (panel) panel.remove(); return; }
+    const { projects: matchedProjects, tasks: matchedTasks } = computeSearchMatches(query);
     if (!panel) { panel = document.createElement("div"); panel.className = "search-results"; panel.id = "search-results"; row.appendChild(panel); }
     if (!matchedProjects.length && !matchedTasks.length) {
-      panel.innerHTML = `<div class="search-empty">No matches for "${escapeHtml(query)}"</div>`;
+      panel.innerHTML = `<div class="search-empty">No matches${hasQuery ? ` for "${escapeHtml(query)}"` : " for these filters"}</div>`;
       return;
     }
     panel.innerHTML = `
@@ -611,11 +669,24 @@
     el("#global-search").value = "";
   }
   el("#global-search").addEventListener("input", (e) => renderSearchResults(e.target.value));
-  el("#global-search").addEventListener("focus", (e) => { if (e.target.value.trim()) renderSearchResults(e.target.value); });
+  el("#global-search").addEventListener("focus", (e) => renderSearchResults(e.target.value));
+  el("#search-filter-toggle").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const panel = el("#search-filters");
+    panel.hidden = !panel.hidden;
+  });
+  ["sf-type", "sf-team", "sf-status", "sf-assignee"].forEach(id => {
+    el("#" + id).addEventListener("change", (e) => {
+      const key = id.replace("sf-", "");
+      searchFilters[key] = e.target.value;
+      renderSearchResults(el("#global-search").value);
+    });
+  });
   document.addEventListener("click", (e) => {
     if (e.target.closest("#search-row")) return;
     const panel = document.getElementById("search-results");
     if (panel) panel.remove();
+    el("#search-filters").hidden = true;
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSearchResults(); });
   el("#notif-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleNotifPanel(); });
