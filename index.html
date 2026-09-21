@@ -188,6 +188,11 @@
   .comment-row:last-child { border-bottom: none; }
   .comment-body { flex: 1; min-width: 0; }
   .comment-mention { color: var(--teal); font-weight: 500; }
+  .file-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .file-row:last-child { border-bottom: none; }
+  .file-row a { color: var(--ink); text-decoration: none; }
+  .file-row a:hover { color: var(--teal); text-decoration: underline; }
+  .file-meta { color: var(--ink-faint); font-size: 11px; }
   .comment-input-bar { position: sticky; bottom: 0; background: var(--panel); padding: 12px 0 20px 0; margin-top: 6px; }
   .mention-dropdown { position: absolute; z-index: 25; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 16px rgba(20,24,22,0.14); width: 200px; overflow: hidden; }
   .mention-option { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; font-size: 12.5px; }
@@ -571,6 +576,30 @@
   async function deleteProject(projectId) { await sb.from("projects").delete().eq("id", projectId); }
   async function deleteTask(taskId) { await sb.from("tasks").delete().eq("id", taskId); }
   async function updateTaskTitle(taskId, title) { await sb.from("tasks").update({ title }).eq("id", taskId); }
+
+  // ---- attachments (files on a task or a project) ----
+  async function uploadAttachment(file, { taskId, projectId }) {
+    const path = `${taskId ? "tasks/" + taskId : "projects/" + projectId}/${Date.now()}-${file.name}`;
+    const { error } = await sb.storage.from("attachments").upload(path, file);
+    if (error) { alert("Upload failed: " + error.message); return; }
+    await sb.from("attachments").insert({
+      task_id: taskId || null, project_id: projectId || null,
+      file_name: file.name, storage_path: path, uploaded_by: me.id
+    });
+  }
+  async function deleteAttachment(id, storagePath) {
+    await sb.storage.from("attachments").remove([storagePath]);
+    await sb.from("attachments").delete().eq("id", id);
+  }
+  async function openAttachment(storagePath) {
+    const { data, error } = await sb.storage.from("attachments").createSignedUrl(storagePath, 3600);
+    if (error || !data) { alert("Couldn't open that file."); return; }
+    window.open(data.signedUrl, "_blank");
+  }
+
+  // ---- task dependencies ----
+  async function addDependency(taskId, dependsOnId) { await sb.from("task_dependencies").insert({ task_id: taskId, depends_on_task_id: dependsOnId }); }
+  async function removeDependency(taskId, dependsOnId) { await sb.from("task_dependencies").delete().eq("task_id", taskId).eq("depends_on_task_id", dependsOnId); }
   async function addPortfolio(data) { await sb.from("portfolios").insert({ name: data.name }); }
   async function addProjectToPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").insert({ project_id: projectId, portfolio_id: portfolioId }); }
   async function removeProjectFromPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").delete().eq("project_id", projectId).eq("portfolio_id", portfolioId); }
@@ -1075,13 +1104,50 @@
   // TASK DETAIL PANEL
   // =========================================================
   let detailTaskId = null, detailTab = "activity", detailActivity = [], detailSubtasks = [];
+  let detailAttachments = [], detailDependencies = [];
 
   function closeTaskDetail() {
     if (channels.taskActivity) { sb.removeChannel(channels.taskActivity); delete channels.taskActivity; }
     if (channels.taskSubtasks) { sb.removeChannel(channels.taskSubtasks); delete channels.taskSubtasks; }
+    if (channels.taskAttachments) { sb.removeChannel(channels.taskAttachments); delete channels.taskAttachments; }
+    if (channels.taskDependencies) { sb.removeChannel(channels.taskDependencies); delete channels.taskDependencies; }
     closeSubtaskDetail();
     detailTaskId = null; detailTab = "activity";
     el("#modal-root").innerHTML = "";
+  }
+
+  async function refetchDetailAttachments(taskId) {
+    const { data } = await sb.from("attachments").select("*").eq("task_id", taskId).order("created_at", { ascending: false });
+    detailAttachments = (data || []).map(a => ({ id: a.id, name: a.file_name, path: a.storage_path, uploadedBy: (personById(a.uploaded_by)||{}).name || "Someone", createdAt: a.created_at }));
+    renderAttachmentsInModal();
+  }
+  function renderAttachmentsInModal() {
+    const wrap = document.querySelector("#td-attachments-list");
+    if (!wrap) return;
+    wrap.innerHTML = detailAttachments.length ? detailAttachments.map(a => `
+      <div class="file-row">
+        <a href="#" data-action="open-attachment" data-path="${a.path}">📎 ${escapeHtml(a.name)}</a>
+        <span class="file-meta">${escapeHtml(a.uploadedBy)} · ${fmtDate(a.createdAt.slice(0,10))} <button class="btn-text" data-action="delete-attachment" data-id="${a.id}" data-path="${a.path}" style="padding:0 0 0 6px;">Remove</button></span>
+      </div>`).join("") : `<div style="font-size:12px;color:var(--ink-faint);">No files yet.</div>`;
+    wrap.querySelectorAll('[data-action="open-attachment"]').forEach(link => link.addEventListener("click", (e) => { e.preventDefault(); openAttachment(link.dataset.path); }));
+    wrap.querySelectorAll('[data-action="delete-attachment"]').forEach(btn => btn.addEventListener("click", () => { if (confirm("Remove this file?")) deleteAttachment(btn.dataset.id, btn.dataset.path); }));
+  }
+
+  async function refetchDetailDependencies(taskId) {
+    const { data } = await sb.from("task_dependencies").select("*").eq("task_id", taskId);
+    detailDependencies = (data || []).map(d => d.depends_on_task_id);
+    renderDependenciesInModal(taskId);
+  }
+  function renderDependenciesInModal(taskId) {
+    const wrap = document.querySelector("#td-deps-list");
+    if (!wrap) return;
+    wrap.innerHTML = detailDependencies.map(depId => {
+      const dep = state.tasks.find(t => t.id === depId);
+      if (!dep) return "";
+      const doneMark = dep.status === "done" ? "✓ " : "";
+      return `<span class="tag" style="background:${dep.status==='done' ? 'var(--sage-soft)' : 'var(--amber-soft)'};color:${dep.status==='done' ? 'var(--sage)' : 'var(--amber)'};display:inline-flex;align-items:center;gap:5px;">${doneMark}${escapeHtml(dep.title)}<button data-dep="${depId}" class="remove-dep-btn" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>`;
+    }).join("");
+    wrap.querySelectorAll(".remove-dep-btn").forEach(btn => btn.addEventListener("click", () => removeDependency(taskId, btn.dataset.dep)));
   }
 
   async function refetchDetailActivity(taskId) {
@@ -1196,6 +1262,10 @@
             <select id="td-add-project" style="max-width:220px;"><option value="" selected disabled>+ Add to another project</option>${state.projects.filter(p => !task.projectIds.includes(p.id)).map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
           </div></div>
           <div class="field-table-row"><span class="ft-label">Est. hours</span><input type="number" id="td-hours" min="0" value="${task.estimatedHours || 0}" /></div>
+          <div class="field-table-row" style="align-items:flex-start;"><span class="ft-label" style="padding-top:6px;">Dependencies</span><div>
+            <div id="td-deps-list" class="chip-row"></div>
+            <select id="td-add-dep" style="max-width:220px;"><option value="" selected disabled>+ Add dependency</option>${state.tasks.filter(t => t.id !== taskId).map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("")}</select>
+          </div></div>
         </div>
         <div class="section-label">Description</div>
         <textarea id="td-description" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;margin-bottom:20px;">${escapeHtml(task.description || "")}</textarea>
@@ -1206,7 +1276,10 @@
           <select id="td-new-subtask-assignee" style="width:120px;"><option value="">Unassigned</option>${state.people.map(p => `<option value="${p.name}">${escapeHtml(p.name)}</option>`).join("")}</select>
           <button class="btn-ghost" id="td-subtask-save">Add</button>
         </div>
-        <div class="tabs-row" style="margin-top:22px;"><button class="tab-btn" data-tab="comments">Comments</button><button class="tab-btn active" data-tab="activity">All activity</button></div>
+        <div class="section-label">Attachments</div>
+        <div id="td-attachments-list" style="margin-bottom:8px;"></div>
+        <input type="file" id="td-file-input" style="font-size:12px;margin-bottom:20px;" />
+        <div class="tabs-row" style="margin-top:6px;"><button class="tab-btn" data-tab="comments">Comments</button><button class="tab-btn active" data-tab="activity">All activity</button></div>
         <div id="task-comments-list" style="max-height:220px;overflow-y:auto;"></div>
         <div class="comment-input-bar">
           <textarea id="td-new-comment" rows="2" placeholder="Add a comment… type @ to tag someone" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea>
@@ -1227,11 +1300,23 @@
       lastTitle = val;
       updateTaskTitle(taskId, val);
     });
-    el("#td-complete").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.checked ? "done" : "todo"); closeTaskDetail(); openTaskDetail(taskId); });
+    el("#td-complete").addEventListener("change", async (e) => {
+      if (e.target.checked) {
+        const openDeps = detailDependencies.map(id => state.tasks.find(t => t.id === id)).filter(t => t && t.status !== "done");
+        if (openDeps.length && !confirm(`This task depends on ${openDeps.length} task${openDeps.length===1?'':'s'} that ${openDeps.length===1?"isn't":"aren't"} done yet:\n${openDeps.map(t=>"• "+t.title).join("\n")}\n\nMark complete anyway?`)) { e.target.checked = false; return; }
+      }
+      await updateTaskStatus(taskId, e.target.checked ? "done" : "todo"); closeTaskDetail(); openTaskDetail(taskId);
+    });
     el("#td-assignee").addEventListener("change", (e) => setAssignee(taskId, e.target.value));
     el("#td-due").addEventListener("change", (e) => setDueDate(taskId, e.target.value));
     el("#td-status").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.value); closeTaskDetail(); openTaskDetail(taskId); });
     el("#td-hours").addEventListener("change", (e) => setEstimatedHours(taskId, Number(e.target.value) || 0));
+    el("#td-add-dep").addEventListener("change", (e) => { if (e.target.value) addDependency(taskId, e.target.value); });
+    el("#td-file-input").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (file) uploadAttachment(file, { taskId });
+      e.target.value = "";
+    });
     el("#td-add-project").addEventListener("change", (e) => { if (e.target.value) addTaskToProject(taskId, e.target.value); });
     renderProjectsListInModal(taskId);
 
@@ -1268,6 +1353,11 @@
     refetchDetailSubtasks(taskId);
     channels.taskActivity = sb.channel("activity-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "task_activity", filter: "task_id=eq." + taskId }, () => refetchDetailActivity(taskId)).subscribe();
     channels.taskSubtasks = sb.channel("subtasks-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "subtasks", filter: "task_id=eq." + taskId }, () => refetchDetailSubtasks(taskId)).subscribe();
+
+    refetchDetailAttachments(taskId);
+    refetchDetailDependencies(taskId);
+    channels.taskAttachments = sb.channel("attachments-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "attachments", filter: "task_id=eq." + taskId }, () => refetchDetailAttachments(taskId)).subscribe();
+    channels.taskDependencies = sb.channel("deps-" + taskId).on("postgres_changes", { event: "*", schema: "public", table: "task_dependencies", filter: "task_id=eq." + taskId }, () => refetchDetailDependencies(taskId)).subscribe();
   }
 
   // =========================================================
@@ -1421,6 +1511,10 @@
         <input type="checkbox" id="share-toggle" ${project.visibleToClient ? "checked" : ""} /> Share with client
       </label>
 
+      <div class="section-label" style="margin-top:14px;">Attachments</div>
+      <div id="ps-attachments-list" style="margin-bottom:8px;"></div>
+      <input type="file" id="ps-file-input" style="font-size:12px;margin-bottom:14px;" />
+
       <div class="section-label" style="margin-top:14px;color:var(--coral);">Danger zone</div>
       <button class="btn-ghost" id="ps-delete" style="width:100%;border-color:var(--coral);color:var(--coral);">Delete this project</button>
 
@@ -1450,6 +1544,26 @@
     el("#add-client-select").addEventListener("change", (e) => { if (e.target.value) { addClientToProject(projectId, e.target.value); root.innerHTML = ""; } });
     el("#share-toggle").addEventListener("change", (e) => updateProjectField(projectId, { visibleToClient: e.target.checked }));
     root.querySelectorAll(".remove-client-btn").forEach(btn => btn.addEventListener("click", () => { removeClientFromProject(projectId, btn.dataset.cid); root.innerHTML = ""; }));
+
+    async function renderProjectAttachments() {
+      const { data } = await sb.from("attachments").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
+      const list = (data || []).map(a => ({ id: a.id, name: a.file_name, path: a.storage_path, uploadedBy: (personById(a.uploaded_by)||{}).name || "Someone", createdAt: a.created_at }));
+      const wrap = el("#ps-attachments-list");
+      if (!wrap) return;
+      wrap.innerHTML = list.length ? list.map(a => `
+        <div class="file-row">
+          <a href="#" data-action="open" data-path="${a.path}">📎 ${escapeHtml(a.name)}</a>
+          <span class="file-meta">${escapeHtml(a.uploadedBy)} · ${fmtDate(a.createdAt.slice(0,10))} <button class="btn-text" data-action="delete" data-id="${a.id}" data-path="${a.path}" style="padding:0 0 0 6px;">Remove</button></span>
+        </div>`).join("") : `<div style="font-size:12px;color:var(--ink-faint);">No files yet.</div>`;
+      wrap.querySelectorAll('[data-action="open"]').forEach(link => link.addEventListener("click", (e) => { e.preventDefault(); openAttachment(link.dataset.path); }));
+      wrap.querySelectorAll('[data-action="delete"]').forEach(btn => btn.addEventListener("click", async () => { if (confirm("Remove this file?")) { await deleteAttachment(btn.dataset.id, btn.dataset.path); renderProjectAttachments(); } }));
+    }
+    renderProjectAttachments();
+    el("#ps-file-input").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (file) { await uploadAttachment(file, { projectId }); renderProjectAttachments(); }
+      e.target.value = "";
+    });
   }
 
   function openNewPortfolioModal() {
