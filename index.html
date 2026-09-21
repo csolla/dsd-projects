@@ -493,6 +493,7 @@
     state.projects = (projects || []).map(p => ({
       id: p.id, name: p.name, team: p.team, client: p.client_company, status: p.status,
       startDate: p.start_date, endDate: p.end_date, visibleToClient: p.share_with_client,
+      budget: p.budget, budgetSpent: p.budget_spent || 0,
       portfolioIds: (pf || []).filter(r => r.project_id === p.id).map(r => r.portfolio_id),
       clientIds: (pc || []).filter(r => r.project_id === p.id).map(r => r.client_id)
     }));
@@ -562,11 +563,14 @@
     }
   }
   async function updateProjectField(projectId, fields) {
-    const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company" };
+    const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company", budgetSpent: "budget_spent" };
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
     await sb.from("projects").update(payload).eq("id", projectId);
   }
+  async function deleteProject(projectId) { await sb.from("projects").delete().eq("id", projectId); }
+  async function deleteTask(taskId) { await sb.from("tasks").delete().eq("id", taskId); }
+  async function updateTaskTitle(taskId, title) { await sb.from("tasks").update({ title }).eq("id", taskId); }
   async function addPortfolio(data) { await sb.from("portfolios").insert({ name: data.name }); }
   async function addProjectToPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").insert({ project_id: projectId, portfolio_id: portfolioId }); }
   async function removeProjectFromPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").delete().eq("project_id", projectId).eq("portfolio_id", portfolioId); }
@@ -866,6 +870,7 @@
           </div>
           <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
           <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
+          ${p.budget ? `<div style="font-size:11px;color:${p.budgetSpent > p.budget ? 'var(--coral)' : 'var(--ink-faint)'};margin-top:6px;">💰 $${p.budgetSpent||0} of $${p.budget} spent</div>` : ""}
           <div style="margin-top:10px;" onclick="event.stopPropagation()">
             ${p.portfolioIds.length ? `<div class="chip-row">${p.portfolioIds.map(fid => { const f = state.portfolios.find(f => f.id === fid); return f ? `<span class="tag" style="background:var(--line);color:var(--ink-soft);display:inline-flex;align-items:center;gap:4px;">📁 ${escapeHtml(f.name)}<button class="remove-from-portfolio-inline" data-pid="${p.id}" data-fid="${fid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("")}</div>` : ""}
             ${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).length ? `<select class="add-to-portfolio-inline" data-pid="${p.id}" style="font-size:11.5px;max-width:100%;"><option value="" selected disabled>+ Add to portfolio</option>${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("")}</select>` : ""}
@@ -1175,9 +1180,12 @@
       <div class="detail-backdrop" id="detail-backdrop"><div class="detail-panel">
         <div class="detail-topbar">
           <label class="complete-check ${task.status === 'done' ? 'done' : ''}"><input type="checkbox" id="td-complete" ${task.status === 'done' ? 'checked' : ''} />${task.status === 'done' ? '✓ Completed' : 'Mark complete'}</label>
-          <button class="icon-btn" id="td-close" title="Close"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+          <div style="display:flex;gap:4px;">
+            <button class="icon-btn" id="td-delete" title="Delete task"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h12M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6m2 0-.7 10.1a1.5 1.5 0 0 1-1.5 1.4H7.2a1.5 1.5 0 0 1-1.5-1.4L5 6"/></svg></button>
+            <button class="icon-btn" id="td-close" title="Close"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5l10 10M15 5L5 15"/></svg></button>
+          </div>
         </div>
-        <div class="detail-title">${escapeHtml(task.title)}</div>
+        <input id="td-title" value="${escapeHtml(task.title)}" class="detail-title" style="width:100%;border:none;background:none;padding:2px 0;" />
         <div class="field-table">
           <div class="field-table-row"><span class="ft-label">Assignee</span><div class="ft-assignee"><span class="identity-dot" style="width:22px;height:22px;font-size:9px;background:${colorForName(task.assignee)}">${task.assignee ? initials(task.assignee) : '?'}</span>
             <select id="td-assignee"><option value="" ${!task.assignee ? 'selected' : ''}>No assignee</option>${state.people.map(p => `<option value="${p.name}" ${p.name === task.assignee ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join("")}</select></div></div>
@@ -1207,6 +1215,18 @@
       </div></div>`;
     el("#detail-backdrop").addEventListener("click", (e) => { if (e.target.id === "detail-backdrop") closeTaskDetail(); });
     el("#td-close").addEventListener("click", closeTaskDetail);
+    el("#td-delete").addEventListener("click", () => {
+      if (!confirm(`Delete "${task.title}"? This removes it from every project it's on, along with its subtasks and comments.`)) return;
+      deleteTask(taskId);
+      closeTaskDetail();
+    });
+    let lastTitle = task.title;
+    el("#td-title").addEventListener("blur", (e) => {
+      const val = e.target.value.trim();
+      if (!val || val === lastTitle) return;
+      lastTitle = val;
+      updateTaskTitle(taskId, val);
+    });
     el("#td-complete").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.checked ? "done" : "todo"); closeTaskDetail(); openTaskDetail(taskId); });
     el("#td-assignee").addEventListener("change", (e) => setAssignee(taskId, e.target.value));
     el("#td-due").addEventListener("change", (e) => setDueDate(taskId, e.target.value));
@@ -1369,8 +1389,24 @@
     const project = state.projects.find(p => p.id === projectId);
     if (!project) return;
     const root = el("#modal-root");
-    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal">
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:420px;">
       <h3>Project settings</h3>
+
+      <div class="section-label">Details</div>
+      <div class="field"><label>Name</label><input id="ps-name" type="text" value="${escapeHtml(project.name)}" /></div>
+      <div class="field"><label>Team</label><select id="ps-team">${TEAMS.map(t => `<option ${t===project.team?'selected':''}>${t}</option>`).join("")}</select></div>
+      <div class="field"><label>Client (optional)</label><input id="ps-client" type="text" value="${escapeHtml(project.client || "")}" /></div>
+      <div class="field"><label>Status</label><select id="ps-status">${STATUSES.map(s => `<option ${s===project.status?'selected':''}>${s}</option>`).join("")}</select></div>
+      <div class="field"><label>Start date</label><input id="ps-start" type="date" value="${project.startDate||''}" /></div>
+      <div class="field"><label>Target end date</label><input id="ps-end" type="date" value="${project.endDate||''}" /></div>
+      <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-details" style="width:100%;">Save details</button></div>
+
+      <div class="section-label">Budget</div>
+      <div class="field"><label>Total budget ($, optional)</label><input id="ps-budget" type="number" min="0" value="${project.budget != null ? project.budget : ''}" /></div>
+      <div class="field"><label>Spent so far ($)</label><input id="ps-spent" type="number" min="0" value="${project.budgetSpent || 0}" /></div>
+      ${project.budget ? `<div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, Math.round((project.budgetSpent||0)/project.budget*100))}%; background:${(project.budgetSpent||0) > project.budget ? 'var(--coral)' : 'var(--teal)'};"></div></div><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">$${project.budgetSpent||0} of $${project.budget} spent</div>` : ""}
+      <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-budget" style="width:100%;">Save budget</button></div>
+
       <div class="section-label">Client access</div>
       <div class="chip-row" id="ps-client-chips">
         ${project.clientIds.map(cid => { const c = state.clients.find(c => c.id === cid); return c ? `<span class="tag" style="background:var(--coral-soft);color:var(--coral);display:inline-flex;align-items:center;gap:4px;">${escapeHtml(c.name)}<button class="remove-client-btn" data-cid="${cid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("") || `<span style="font-size:12px;color:var(--ink-faint);">No clients have access yet.</span>`}
@@ -1384,10 +1420,33 @@
       <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">
         <input type="checkbox" id="share-toggle" ${project.visibleToClient ? "checked" : ""} /> Share with client
       </label>
+
+      <div class="section-label" style="margin-top:14px;color:var(--coral);">Danger zone</div>
+      <button class="btn-ghost" id="ps-delete" style="width:100%;border-color:var(--coral);color:var(--coral);">Delete this project</button>
+
       <div class="modal-actions"><button class="btn-ghost" id="ps-close">Close</button></div>
     </div></div>`;
     el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
     el("#ps-close").addEventListener("click", () => root.innerHTML = "");
+    el("#ps-save-details").addEventListener("click", () => {
+      updateProjectField(projectId, {
+        name: el("#ps-name").value.trim() || project.name, team: el("#ps-team").value, client: el("#ps-client").value.trim(),
+        status: el("#ps-status").value, startDate: el("#ps-start").value, endDate: el("#ps-end").value
+      });
+      root.innerHTML = "";
+    });
+    el("#ps-save-budget").addEventListener("click", () => {
+      const budgetVal = el("#ps-budget").value;
+      updateProjectField(projectId, { budget: budgetVal === "" ? null : Number(budgetVal), budgetSpent: Number(el("#ps-spent").value) || 0 });
+      root.innerHTML = "";
+    });
+    el("#ps-delete").addEventListener("click", () => {
+      if (!confirm(`Delete "${project.name}"? This can't be undone. Tasks that only belonged to this project will stay in the system but won't be visible on any board.`)) return;
+      deleteProject(projectId);
+      root.innerHTML = "";
+      state.selectedProjectId = null;
+      setView("projects");
+    });
     el("#add-client-select").addEventListener("change", (e) => { if (e.target.value) { addClientToProject(projectId, e.target.value); root.innerHTML = ""; } });
     el("#share-toggle").addEventListener("change", (e) => updateProjectField(projectId, { visibleToClient: e.target.checked }));
     root.querySelectorAll(".remove-client-btn").forEach(btn => btn.addEventListener("click", () => { removeClientFromProject(projectId, btn.dataset.cid); root.innerHTML = ""; }));
