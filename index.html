@@ -380,7 +380,8 @@
     selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all",
     dashboardScope: "dsd", dashboardTeam: null,
     timeEntries: [], resMeetings: [], resItems: [], resFlags: [], resTotalsCache: {},
-    resBu: null, resMeetingDate: null, timeWeek: null
+    resBu: null, resMeetingDate: null, timeWeek: null,
+    holidays: [], timeOff: [], resCapCache: {}, resMonth: null
   };
   let channels = {};
 
@@ -930,6 +931,7 @@
     const { data } = await sb.from("notifications").select("*").eq("recipient_id", me.id).order("created_at", { ascending: false }).limit(30);
     state.notifications = (data || []).map(n => ({
       id: n.id, type: n.type, taskId: n.task_id, projectId: n.project_id, read: n.read, createdAt: n.created_at,
+      message: n.message, businessUnit: n.business_unit,
       fromName: (personById(n.from_id) || {}).name || "Someone",
       taskTitle: (state.tasks.find(t => t.id === n.task_id) || {}).title || "a task",
       projectName: (projectById(n.project_id) || {}).name || ""
@@ -957,15 +959,22 @@
     panel.innerHTML = `
       <div class="notif-panel-head"><span>Notifications</span>${items.some(n=>!n.read) ? '<button class="btn-text" id="notif-mark-all" style="font-size:11px;">Mark all read</button>' : ''}</div>
       ${items.length ? items.map(n => `
-        <button class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-project="${n.projectId}" data-task="${n.taskId}">
-          <div><strong>${escapeHtml(n.fromName)}</strong> ${n.type === 'mentioned' ? 'mentioned you on' : 'assigned you'} "${escapeHtml(n.taskTitle)}"</div>
-          <div class="notif-meta">${escapeHtml(n.projectName)} · ${new Date(n.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
+        <button class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-project="${n.projectId}" data-task="${n.taskId}" data-type="${n.type}" data-bu="${escapeHtml(n.businessUnit || '')}">
+          ${n.type === 'resourcing_limit' ? `<div><strong>Monthly limit:</strong> ${escapeHtml(n.message || '')}</div>` : `<div><strong>${escapeHtml(n.fromName)}</strong> ${n.type === 'mentioned' ? 'mentioned you on' : 'assigned you'} "${escapeHtml(n.taskTitle)}"</div>`}
+          <div class="notif-meta">${n.type === 'resourcing_limit' ? 'Resourcing' : escapeHtml(n.projectName)} · ${new Date(n.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
         </button>`).join("") : `<div class="notif-empty">No notifications yet.</div>`}`;
     const markAll = document.getElementById("notif-mark-all");
     if (markAll) markAll.addEventListener("click", (e) => { e.stopPropagation(); items.filter(n=>!n.read).forEach(n => markNotificationRead(n.id)); });
     panel.querySelectorAll(".notif-item").forEach(btn => {
       btn.addEventListener("click", () => {
         markNotificationRead(btn.dataset.id);
+        if (btn.dataset.type === "resourcing_limit") {
+          toggleNotifPanel();
+          if (btn.dataset.bu && MEETING_SERIES[btn.dataset.bu]) state.resBu = btn.dataset.bu;
+          state.resMonth = null;
+          setView("resourcing");
+          return;
+        }
         state.selectedProjectId = btn.dataset.project;
         toggleNotifPanel();
         render();
@@ -2009,17 +2018,21 @@
       if (detailTaskId && el("#td-time-list")) renderTaskTime(detailTaskId);
     };
     const onMeta = async () => { await loadResourcingMeta(); if (state.view === "resourcing" && !state.selectedProjectId) safeRender(); };
+    const onCap = async () => { await loadCapacityData(); if (state.view === "resourcing" && !state.selectedProjectId) safeRender(); };
     channels.resourcing = sb.channel("resourcing-changes")
       .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, onTime)
       .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_meetings" }, onMeta)
       .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_items" }, onMeta)
       .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_flags" }, onMeta)
+      .on("postgres_changes", { event: "*", schema: "public", table: "time_off" }, onCap)
+      .on("postgres_changes", { event: "*", schema: "public", table: "public_holidays" }, onCap)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => { state.resCapCache = {}; })
       .subscribe();
   }
 
   async function bootResourcing() {
     el("#nav-resourcing").hidden = !canSeeResourcing();
-    await Promise.all([loadTimeEntries(), loadResourcingMeta()]);
+    await Promise.all([loadTimeEntries(), loadResourcingMeta(), loadCapacityData()]);
     subscribeResourcing();
     if (["time", "resourcing"].includes(state.view)) render();
   }
@@ -2235,6 +2248,7 @@
     content().innerHTML = `
       <div class="res-period">${per.isFirst ? "Baseline meeting. " : ""}Hours reviewed: ${fmtLong(per.start)} to ${fmtLong(per.end)}. Next period: ${fmtLong(per.nextStart)} to ${fmtLong(per.nextEnd)}.</div>
       <div class="res-stack">
+        ${limitPanelHtml()}
         <div class="panel">
           <h3>1. Hours vs allocation <span class="res-note">5 min</span></h3>
           <div id="res-alloc"><div class="res-note">Loading hours…</div></div>
@@ -2297,6 +2311,7 @@
         </div>
 
         ${admin ? renderFlagsPanel(bu, meeting) : ""}
+        ${admin ? capacityPanelHtml() : ""}
       </div>`;
 
     // allocation (async totals via secure function)
@@ -2330,6 +2345,8 @@
         el("#res-capacity").textContent = `Expected ${bu} capacity next period: about ${fmtH(est)}, based on the team's last four weeks and the ${pct(BU_TARGET[bu])} allocation.`;
       });
     }
+
+    fillLimitPanel(bu);
 
     // events
     content().querySelectorAll("[data-open]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.selectedProjectId = a.dataset.open; render(); }));
@@ -2368,6 +2385,7 @@
     content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => { await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid); await loadResourcingMeta(); render(); }));
     content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this item?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
     bindFlagsPanel(bu, date);
+    bindCapacityPanel();
   }
 
   // ---------- flags for Brendon (admin only) ----------
@@ -2526,6 +2544,165 @@
       await loadTimeEntries();
       root.innerHTML = "";
       render();
+    });
+  }
+
+  // =========================================================
+  // MONTHLY LIMITS + TEAM CAPACITY
+  // =========================================================
+  const CAPACITY_BUFFER = 0.8;          // 20% buffer, must match resourcing_month_capacity_raw
+  const FIRST_LIMIT_MONTH = "2026-10-01";
+  const HOLIDAY_REGIONS = ["Madrid", "England"];
+  const monthStart = (s) => s.slice(0, 7) + "-01";
+  function nextMonth(s) { const d = new Date(s.slice(0, 7) + "-01T00:00:00"); d.setMonth(d.getMonth() + 1); return localIso(d); }
+  const monthEnd = (s) => addDays(nextMonth(monthStart(s)), -1);
+  function fmtMonth(s) { return new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" }); }
+  function limitMonths() { const out = []; let m = FIRST_LIMIT_MONTH; const last = nextMonth(nextMonth(monthStart(todayIso()))); while (m <= last) { out.push(m); m = nextMonth(m); } return out; }
+
+  async function loadCapacityData() {
+    const h = await sb.from("public_holidays").select("*").order("holiday_date");
+    state.holidays = h.data || [];
+    if (me.isAdmin) { const t = await sb.from("time_off").select("*").order("off_date"); state.timeOff = t.data || []; }
+    state.resCapCache = {};
+  }
+  async function fetchCapacity(month) {
+    if (state.resCapCache[month] != null) return state.resCapCache[month];
+    const { data } = await sb.rpc("resourcing_month_capacity", { p_month: month });
+    state.resCapCache[month] = Number(data) || 0;
+    return state.resCapCache[month];
+  }
+
+  // Same rule as the database: weekdays, minus bank holidays and time off
+  function personMonthBreakdown(p, month) {
+    const end = monthEnd(month), days = [], off = [];
+    for (let d = month; d <= end; d = addDays(d, 1)) {
+      const wd = new Date(d + "T00:00:00").getDay();
+      if (wd === 0 || wd === 6) continue;
+      const hol = state.holidays.find(h => h.region === p.holiday_region && h.holiday_date === d);
+      const to = state.timeOff.find(t => t.person_id === p.id && t.off_date === d);
+      if (hol) off.push({ date: d, kind: "holiday", label: hol.name });
+      else if (to) off.push({ date: d, kind: "off", id: to.id, label: to.note || "Time off" });
+      else days.push(d);
+    }
+    return { days: days.length, off, hours: days.length * (Number(p.daily_hours) || 0) };
+  }
+
+  function limitPanelHtml() {
+    const months = limitMonths();
+    if (!state.resMonth || !months.includes(state.resMonth)) state.resMonth = monthStart(todayIso());
+    return `<div class="panel">
+      <div class="section-label"><h3 style="margin:0;">Monthly limit</h3>
+        <select id="res-month" aria-label="Month">${months.map(m => `<option value="${m}" ${m === state.resMonth ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select></div>
+      <div id="res-limit"><div class="res-note">Loading…</div></div>
+    </div>`;
+  }
+  function fillLimitPanel(bu) {
+    const sel = el("#res-month");
+    if (sel) sel.addEventListener("change", (e) => { state.resMonth = e.target.value; render(); });
+    const month = state.resMonth;
+    Promise.all([fetchCapacity(month), fetchTotals(month, monthEnd(month))]).then(([cap, totals]) => {
+      const box = el("#res-limit");
+      if (!box) return;
+      if (!cap) { box.innerHTML = `<div class="res-note">No capacity set for ${fmtMonth(month)} yet.${me.isAdmin ? " Add hours a day in Team capacity below." : ""}</div>`; return; }
+      const units = me.isAdmin ? ["Education", "Planning Center"] : [bu];
+      box.innerHTML = units.map(b => {
+        const limit = cap * BU_TARGET[b], used = totals[b] || 0, ratio = limit ? used / limit : 0;
+        const status = ratio >= 1 ? ["Limit reached", "var(--coral)", "var(--coral-soft)"] : ratio >= 0.8 ? ["Warning: over 80%", "var(--amber)", "var(--amber-soft)"] : ["Within limit", "var(--teal)", "var(--teal-soft)"];
+        return `<div class="alloc-row">
+          <div><span class="tag ${BU_TAG[b]}">${b}</span></div>
+          <div><div class="alloc-bar"><div class="alloc-fill" style="width:${Math.min(100, ratio * 100)}%;background:${status[1]};"></div><div class="alloc-target" style="left:80%;" title="80% warning"></div></div>
+            <div class="res-note" style="margin-top:4px;">${fmtH(used)} used of ${fmtH(limit)}, ${fmtH(Math.max(0, limit - used))} left</div></div>
+          <div style="text-align:right;"><span class="alloc-num">${pct(ratio)}</span> <span class="tag" style="background:${status[2]};color:${status[1]};">${status[0]}</span></div>
+        </div>`;
+      }).join("") + `<div class="res-note" style="margin-top:10px;">${fmtMonth(month)} capacity: ${fmtH(cap)} after a 20% buffer. Education gets 70% and Planning Center 30%; Corporate work uses up time without a limit of its own. The line on each bar marks 80%.</div>`;
+    });
+  }
+
+  // ---------- admin: team capacity editor ----------
+  function capacityPanelHtml() {
+    const month = state.resMonth, end = monthEnd(month);
+    const ppl = state.people.filter(p => p.counts_in_capacity);
+    const rows = ppl.map(p => ({ p, b: personMonthBreakdown(p, month) }));
+    const gross = rows.reduce((s, r) => s + r.b.hours, 0), net = Math.round(gross * CAPACITY_BUFFER * 10) / 10;
+    const hols = state.holidays.filter(h => h.holiday_date >= month && h.holiday_date <= end);
+    return `<div class="panel">
+      <h3>Team capacity: ${fmtMonth(month)}</h3>
+      <div class="res-note" style="margin-bottom:10px;">Only you can see and edit this. Directors only see the resulting limits.</div>
+      ${ppl.length ? `<div class="table-scroll"><table class="res-table">
+        <thead><tr><th>Person</th><th class="num">Hours a day</th><th>Bank holidays</th><th class="num">Working days</th><th>Days off this month</th><th class="num">Hours</th></tr></thead>
+        <tbody>${rows.map(({ p, b }) => `<tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td class="num"><input type="number" min="0" max="12" step="0.5" class="cap-daily" data-pid="${p.id}" value="${p.daily_hours != null ? p.daily_hours : ""}" aria-label="Hours a day for ${escapeHtml(p.name)}" /></td>
+          <td><select class="cap-region" data-pid="${p.id}" style="width:auto;text-align:left;" aria-label="Bank holiday calendar"><option value="">None</option>${HOLIDAY_REGIONS.map(r => `<option ${r === p.holiday_region ? "selected" : ""}>${r}</option>`).join("")}</select></td>
+          <td class="num">${b.days}</td>
+          <td>${b.off.length ? b.off.map(o => o.kind === "off"
+              ? `<span class="tag tag-team-marketing" style="margin:2px;">${fmtShort(o.date)} <button class="btn-text cap-off-del" data-id="${o.id}" title="Remove" style="padding:0 0 0 4px;font-size:11px;">×</button></span>`
+              : `<span class="tag tag-team-corporate" style="margin:2px;" title="${escapeHtml(o.label)}">${fmtShort(o.date)}</span>`).join("") : `<span class="res-note">None</span>`}</td>
+          <td class="num">${fmtH(b.hours)}</td></tr>`).join("")}
+          <tr><td colspan="5">Total before buffer</td><td class="num">${fmtH(gross)}</td></tr>
+          <tr><td colspan="5"><strong style="font-weight:500;">Capacity after 20% buffer</strong></td><td class="num"><strong style="font-weight:500;">${fmtH(net)}</strong></td></tr>
+          <tr><td colspan="5">Education limit (70%)</td><td class="num">${fmtH(net * 0.7)}</td></tr>
+          <tr><td colspan="5">Planning Center limit (30%)</td><td class="num">${fmtH(net * 0.3)}</td></tr>
+        </tbody></table></div>
+        <div class="res-note" style="margin:6px 0 16px 0;">Grey dates are bank holidays, amber dates are time off.</div>`
+        : `<div class="empty-state">Nobody is marked as counted yet. Run the counted-hours update in Supabase first.</div>`}
+
+      <div class="section-label">Add time off</div>
+      <div class="inline-form" style="margin-bottom:16px;">
+        <select id="to-person" aria-label="Person">${ppl.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
+        <input type="date" id="to-from" aria-label="From" />
+        <input type="date" id="to-to" aria-label="To (optional)" title="Leave empty for a single day" />
+        <input type="text" id="to-note" placeholder="Note, e.g. Holiday" style="flex:1;min-width:140px;" aria-label="Note" />
+        <button class="btn-ghost" id="to-add">Add time off</button>
+      </div>
+
+      <div class="section-label">Bank holidays in ${fmtMonth(month)}</div>
+      ${hols.length ? hols.map(h => `<div class="list-row"><span><span class="tag tag-team-corporate">${h.region}</span> ${fmtShort(h.holiday_date)}: ${escapeHtml(h.name)}</span><button class="btn-text cap-hol-del" data-region="${h.region}" data-date="${h.holiday_date}">Remove</button></div>`).join("") : `<div class="res-note" style="margin-bottom:8px;">None this month.</div>`}
+      <div class="inline-form" style="margin-top:10px;">
+        <select id="hol-region" aria-label="Calendar">${HOLIDAY_REGIONS.map(r => `<option>${r}</option>`).join("")}</select>
+        <input type="date" id="hol-date" aria-label="Date" />
+        <input type="text" id="hol-name" placeholder="Name" style="flex:1;min-width:140px;" aria-label="Holiday name" />
+        <button class="btn-ghost" id="hol-add">Add bank holiday</button>
+      </div>
+    </div>`;
+  }
+  function bindCapacityPanel() {
+    const after = async () => { await Promise.all([loadPeople(), loadCapacityData()]); state.resTotalsCache = {}; render(); };
+    content().querySelectorAll(".cap-daily").forEach(i => i.addEventListener("change", async () => {
+      const { error } = await sb.from("profiles").update({ daily_hours: i.value === "" ? null : Number(i.value) }).eq("id", i.dataset.pid);
+      if (error) alert("Couldn't save: " + error.message); await after();
+    }));
+    content().querySelectorAll(".cap-region").forEach(s => s.addEventListener("change", async () => {
+      const { error } = await sb.from("profiles").update({ holiday_region: s.value || null }).eq("id", s.dataset.pid);
+      if (error) alert("Couldn't save: " + error.message); await after();
+    }));
+    content().querySelectorAll(".cap-off-del").forEach(b => b.addEventListener("click", async () => { await sb.from("time_off").delete().eq("id", b.dataset.id); await after(); }));
+    content().querySelectorAll(".cap-hol-del").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("Remove this bank holiday?")) return;
+      await sb.from("public_holidays").delete().eq("region", b.dataset.region).eq("holiday_date", b.dataset.date); await after();
+    }));
+    const toAdd = el("#to-add");
+    if (toAdd) toAdd.addEventListener("click", async () => {
+      const from = el("#to-from").value, to = el("#to-to").value || from, person = el("#to-person").value;
+      if (!from || !person || to < from) { alert("Pick a person and a start date (and an end date on or after it)."); return; }
+      const rows = [];
+      for (let d = from; d <= to; d = addDays(d, 1)) {
+        const wd = new Date(d + "T00:00:00").getDay();
+        if (wd !== 0 && wd !== 6) rows.push({ person_id: person, off_date: d, note: el("#to-note").value.trim() || "Holiday" });
+      }
+      if (!rows.length) { alert("Those dates are all weekend days."); return; }
+      const existing = new Set(state.timeOff.filter(t => t.person_id === person).map(t => t.off_date));
+      const fresh = rows.filter(r => !existing.has(r.off_date));
+      if (fresh.length) { const { error } = await sb.from("time_off").insert(fresh); if (error) alert("Couldn't save: " + error.message); }
+      await after();
+    });
+    const holAdd = el("#hol-add");
+    if (holAdd) holAdd.addEventListener("click", async () => {
+      const date = el("#hol-date").value, name = el("#hol-name").value.trim();
+      if (!date || !name) { alert("Add a date and a name."); return; }
+      const { error } = await sb.from("public_holidays").insert({ region: el("#hol-region").value, holiday_date: date, name });
+      if (error) alert("Couldn't save: " + error.message);
+      await after();
     });
   }
 })();
