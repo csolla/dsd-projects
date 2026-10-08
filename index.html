@@ -220,6 +220,31 @@
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 
+  /* Resourcing + time */
+  .res-period { color: var(--ink-soft); font-size: 13px; margin-bottom: 18px; }
+  .res-stack { display: flex; flex-direction: column; gap: 18px; }
+  .res-note { font-size: 12.5px; color: var(--ink-soft); }
+  .res-flag-over { color: var(--coral); font-weight: 500; }
+  .table-scroll { overflow-x: auto; }
+  .res-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .res-table th { text-align: left; font-weight: 500; color: var(--ink-soft); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .res-table td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .res-table tr:last-child td { border-bottom: none; }
+  .res-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .res-table input, .res-table select { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 4px 6px; width: 72px; text-align: right; }
+  .res-table input:hover, .res-table input:focus, .res-table select:hover { border-color: var(--line); background: var(--bg); }
+  .res-table a { text-decoration: none; color: var(--ink); font-weight: 500; }
+  .res-table a:hover { color: var(--teal); }
+  .alloc-row { display: grid; grid-template-columns: 140px 1fr 200px; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .alloc-bar { position: relative; height: 10px; background: var(--line); border-radius: 5px; }
+  .alloc-fill { height: 100%; border-radius: 5px; }
+  .alloc-target { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--ink); }
+  .alloc-num { font-family: "Fraunces", serif; font-size: 22px; font-weight: 560; }
+  .inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .inline-form input, .inline-form select { border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--bg); }
+  .res-textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--bg); resize: vertical; }
+  .res-notes-read { white-space: pre-wrap; font-size: 13px; margin-bottom: 12px; }
+  @media (max-width: 760px) { .alloc-row { grid-template-columns: 1fr; gap: 6px; } .alloc-row > div:last-child { text-align: left !important; } }
   @media (max-width: 760px) {
     .app { flex-direction: column; }
     .sidebar { width: 100%; flex-direction: row; align-items: center; padding: 12px 16px; overflow-x: auto; }
@@ -285,6 +310,8 @@
       <button class="nav-item" data-view="portfolios"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="14" height="4" rx="1.2"/><rect x="3" y="11" width="14" height="4" rx="1.2"/></svg>Portfolios</button>
       <button class="nav-item" data-view="timeline"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h9M3 14h11"/></svg>Timeline</button>
       <button class="nav-item" data-view="team"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="2.6"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6M12 16c.2-2 1.6-3.4 3.3-3.4 2 0 3.7 1.6 4.2 3.7"/></svg>Team</button>
+      <button class="nav-item" data-view="time"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.6 1.8"/></svg>My time</button>
+      <button class="nav-item" data-view="resourcing" id="nav-resourcing" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 16h14"/><rect x="4" y="9" width="3" height="5" rx="0.8"/><rect x="8.5" y="5" width="3" height="9" rx="0.8"/><rect x="13" y="11" width="3" height="3" rx="0.8"/></svg>Resourcing</button>
       <button class="nav-item" data-view="client"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/></svg>Client projects</button>
     </nav>
     <div class="sidebar-foot">
@@ -351,7 +378,9 @@
     projects: [], tasks: [], people: [], clients: [], portfolios: [], openSubtasks: [], allDependencies: [], completionHistory: [],
     notifications: [], progressMap: {},
     selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all",
-    dashboardScope: "dsd", dashboardTeam: null
+    dashboardScope: "dsd", dashboardTeam: null,
+    timeEntries: [], resMeetings: [], resItems: [], resFlags: [], resTotalsCache: {},
+    resBu: null, resMeetingDate: null, timeWeek: null
   };
   let channels = {};
 
@@ -428,7 +457,7 @@
       el("#auth-status").textContent = "Signed in, but your profile isn't ready yet — refresh in a moment.";
       return;
     }
-    me = { id: profile.id, email: profile.email, name: profile.name, team: profile.team, role: profile.role };
+    me = { id: profile.id, email: profile.email, name: profile.name, team: profile.team, role: profile.role, isAdmin: !!profile.is_admin, resBu: profile.resourcing_bu || null };
     el("#auth-wrap").hidden = true;
     if (bootedUserId === me.id) {
       // Already booted this session — this SIGNED_IN event is just Supabase
@@ -519,6 +548,7 @@
     populateSearchAssigneeOptions();
     subscribeRealtime();
     subscribeNotifications();
+    bootResourcing();
   }
 
   async function loadPeople() {
@@ -541,6 +571,8 @@
       id: p.id, name: p.name, team: p.team, client: p.client_company, status: p.status,
       startDate: p.start_date, endDate: p.end_date, visibleToClient: p.share_with_client,
       budget: p.budget, budgetSpent: p.budget_spent || 0,
+      businessUnit: p.business_unit || null, plannedHours: p.planned_hours != null ? Number(p.planned_hours) : null, priority: p.priority,
+      isUnplanned: !!p.is_unplanned, unplannedStatus: p.unplanned_status, requestedOn: p.requested_on, swappedFor: p.swapped_for,
       portfolioIds: (pf || []).filter(r => r.project_id === p.id).map(r => r.portfolio_id),
       clientIds: (pc || []).filter(r => r.project_id === p.id).map(r => r.client_id)
     }));
@@ -726,14 +758,17 @@
   async function addProject(data) {
     const { data: row } = await sb.from("projects").insert({
       name: data.name, team: data.team, client_company: data.client, status: data.status,
-      start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient
+      start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient,
+      business_unit: data.businessUnit || null, planned_hours: data.plannedHours != null ? data.plannedHours : null, priority: data.priority != null ? data.priority : null,
+      is_unplanned: !!data.isUnplanned, unplanned_status: data.unplannedStatus || null, requested_on: data.requestedOn || null
     }).select().single();
     if (row && data.portfolioIds && data.portfolioIds.length) {
       await sb.from("project_portfolios").insert(data.portfolioIds.map(fid => ({ project_id: row.id, portfolio_id: fid })));
     }
   }
   async function updateProjectField(projectId, fields) {
-    const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company", budgetSpent: "budget_spent" };
+    const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company", budgetSpent: "budget_spent",
+      businessUnit: "business_unit", plannedHours: "planned_hours", isUnplanned: "is_unplanned", unplannedStatus: "unplanned_status", requestedOn: "requested_on", swappedFor: "swapped_for" };
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
     await sb.from("projects").update(payload).eq("id", projectId);
@@ -1336,6 +1371,8 @@
     else if (state.view === "timeline") renderTimeline();
     else if (state.view === "team") renderTeam();
     else if (state.view === "client") renderClientPreview();
+    else if (state.view === "time") renderTime();
+    else if (state.view === "resourcing") renderResourcing();
   }
 
   // =========================================================
@@ -1505,6 +1542,7 @@
             <select id="td-add-dep" style="max-width:220px;"><option value="" selected disabled>+ Add dependency</option>${state.tasks.filter(t => t.id !== taskId).map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("")}</select>
           </div></div>
         </div>
+        <div id="td-time"></div>
         <div class="section-label">Description</div>
         <textarea id="td-description" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;margin-bottom:20px;">${escapeHtml(task.description || "")}</textarea>
         <div class="section-label">Subtasks</div>
@@ -1557,6 +1595,7 @@
     });
     el("#td-add-project").addEventListener("change", (e) => { if (e.target.value) addTaskToProject(taskId, e.target.value); });
     renderProjectsListInModal(taskId);
+    renderTaskTime(taskId);
 
     let lastDescription = task.description || "";
     el("#td-description").addEventListener("blur", (e) => {
@@ -1735,6 +1774,14 @@
       ${project.budget ? `<div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, Math.round((project.budgetSpent||0)/project.budget*100))}%; background:${(project.budgetSpent||0) > project.budget ? 'var(--coral)' : 'var(--teal)'};"></div></div><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">$${project.budgetSpent||0} of $${project.budget} spent</div>` : ""}
       <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-budget" style="width:100%;">Save budget</button></div>
 
+      <div class="section-label">Resourcing</div>
+      <div class="field"><label>Business unit served</label><select id="ps-bu"><option value="">Not a business unit campaign</option>${BUS.map(b => `<option ${b===project.businessUnit?'selected':''}>${b}</option>`).join("")}</select></div>
+      <div class="field"><label>Planned hours</label><input id="ps-planned" type="number" min="0" value="${project.plannedHours != null ? project.plannedHours : ''}" /></div>
+      <div class="field"><label>Priority (1 is highest)</label><input id="ps-priority" type="number" min="1" value="${project.priority != null ? project.priority : ''}" /></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="ps-unplanned" ${project.isUnplanned ? 'checked' : ''} /> Unplanned request</label>
+      <div class="field"><label>Requested on</label><input id="ps-requested" type="date" value="${project.requestedOn || ''}" /></div>
+      <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-res" style="width:100%;">Save resourcing</button></div>
+
       <div class="section-label">Client access</div>
       <div class="chip-row" id="ps-client-chips">
         ${project.clientIds.map(cid => { const c = state.clients.find(c => c.id === cid); return c ? `<span class="tag" style="background:var(--coral-soft);color:var(--coral);display:inline-flex;align-items:center;gap:4px;">${escapeHtml(c.name)}<button class="remove-client-btn" data-cid="${cid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("") || `<span style="font-size:12px;color:var(--ink-faint);">No clients have access yet.</span>`}
@@ -1770,6 +1817,18 @@
     el("#ps-save-budget").addEventListener("click", () => {
       const budgetVal = el("#ps-budget").value;
       updateProjectField(projectId, { budget: budgetVal === "" ? null : Number(budgetVal), budgetSpent: Number(el("#ps-spent").value) || 0 });
+      root.innerHTML = "";
+    });
+    el("#ps-save-res").addEventListener("click", () => {
+      const unplanned = el("#ps-unplanned").checked;
+      updateProjectField(projectId, {
+        businessUnit: el("#ps-bu").value || null,
+        plannedHours: el("#ps-planned").value === "" ? null : Number(el("#ps-planned").value),
+        priority: el("#ps-priority").value === "" ? null : Number(el("#ps-priority").value),
+        isUnplanned: unplanned,
+        unplannedStatus: unplanned ? (project.unplannedStatus || "logged") : null,
+        requestedOn: unplanned ? (el("#ps-requested").value || project.requestedOn || new Date().toISOString().slice(0,10)) : null
+      });
       root.innerHTML = "";
     });
     el("#ps-delete").addEventListener("click", () => {
@@ -1820,6 +1879,7 @@
     root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New project</h3>
       <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
       <div class="field"><label>Team</label><select id="mp-team">${TEAMS.map(t => `<option>${t}</option>`).join("")}</select></div>
+      <div class="field"><label>Business unit served (Marketing campaigns)</label><select id="mp-bu"><option value="">None</option>${BUS.map(b => `<option>${b}</option>`).join("")}</select></div>
       <div class="field"><label>Client (optional)</label><input id="mp-client" type="text" placeholder="Leave blank for internal" /></div>
       <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
       <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
@@ -1838,10 +1898,634 @@
         name, team: el("#mp-team").value, client: el("#mp-client").value.trim(),
         startDate: el("#mp-start").value || new Date().toISOString().slice(0,10),
         endDate: el("#mp-end").value || new Date().toISOString().slice(0,10),
-        status: el("#mp-status").value, visibleToClient: el("#mp-visible").checked,
+        status: el("#mp-status").value, visibleToClient: el("#mp-visible").checked, businessUnit: el("#mp-bu").value || null,
         portfolioIds: (portfolioField && portfolioField.value) ? [portfolioField.value] : []
       });
       root.innerHTML = "";
+    });
+  }
+
+  // =========================================================
+  // RESOURCING: time logging, BU meetings, planned vs actual
+  // =========================================================
+  const BUS = ["Education", "Planning Center", "Delight", "Corporate"];
+  const BU_TARGET = { "Education": 0.7, "Planning Center": 0.3 };
+  const BU_TAG = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Delight": "tag-team-delight", "Corporate": "tag-team-corporate" };
+  const MEETING_SERIES = {
+    "Education": { start: "2026-10-22", every: 14, with: "Carlos", how: "in person, 13:00" },
+    "Planning Center": { start: "2026-10-22", every: 28, with: "JJ", how: "Google Meet, 16:00 Madrid / 10:00 Miami" }
+  };
+  const FIRST_PERIOD_START = "2026-09-28"; // first week in the Marketing time log workbook
+  const UNPLANNED_LABEL = { logged: "Logged for next meeting", urgent_swap: "Urgent, swapped in", accepted: "Accepted into plan", declined: "Declined" };
+
+  const rollup = (bu) => bu === "Delight" ? "Planning Center" : bu;
+  const buMembers = (bu) => bu === "Planning Center" ? ["Planning Center", "Delight"] : [bu];
+  function localIso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+  function todayIso() { return localIso(new Date()); }
+  function addDays(s, n) { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + n); return localIso(d); }
+  function mondayOf(s) { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return localIso(d); }
+  function fmtLong(s) { return new Date(s + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" }); }
+  function fmtShort(s) { return new Date(s + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" }); }
+  function fmtH(h) { return (Math.round((Number(h) || 0) * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 }) + "h"; }
+  const pct = (x) => Math.round(x * 100) + "%";
+
+  function canSeeResourcing() { return !!me && (me.isAdmin || !!me.resBu); }
+  function countedIds() { return new Set(state.people.filter(p => p.counts_in_capacity).map(p => p.id)); }
+
+  function meetingSchedule(bu) {
+    const s = MEETING_SERIES[bu], out = [], until = addDays(todayIso(), 180);
+    let d = s.start;
+    while (d <= until) { out.push(d); d = addDays(d, s.every); }
+    return out;
+  }
+  function periodFor(bu, date) {
+    const list = meetingSchedule(bu), i = list.indexOf(date);
+    const next = list[i + 1] || addDays(date, MEETING_SERIES[bu].every);
+    return { start: i <= 0 ? FIRST_PERIOD_START : list[i - 1], end: addDays(date, -1), nextStart: date, nextEnd: addDays(next, -1), isFirst: i === 0 };
+  }
+  function defaultMeeting(bu) { const t = todayIso(), list = meetingSchedule(bu); return list.find(d => d >= t) || list[list.length - 1]; }
+
+  function entryLabel(e) {
+    const t = e.task_id && state.tasks.find(t => t.id === e.task_id);
+    const p = e.project_id && state.projects.find(p => p.id === e.project_id);
+    if (t && p) return `${p.name}: ${t.title}`;
+    if (p) return p.name + (e.label ? `: ${e.label}` : "");
+    return e.label || "No project";
+  }
+
+  // ---------- loading ----------
+  async function fetchAll(makeQuery) {
+    let from = 0, out = [];
+    for (;;) {
+      const { data, error } = await makeQuery().range(from, from + 999);
+      if (error || !data) break;
+      out = out.concat(data);
+      if (data.length < 1000) break;
+      from += 1000;
+    }
+    return out;
+  }
+  async function loadTimeEntries() {
+    state.timeEntries = await fetchAll(() => sb.from("time_entries").select("*").order("entry_date"));
+    state.resTotalsCache = {};
+  }
+  async function loadResourcingMeta() {
+    if (!canSeeResourcing()) return;
+    const [m, i] = await Promise.all([
+      sb.from("resourcing_meetings").select("*"),
+      sb.from("resourcing_items").select("*").order("created_at")
+    ]);
+    state.resMeetings = m.data || [];
+    state.resItems = i.data || [];
+    if (me.isAdmin) {
+      const f = await sb.from("resourcing_flags").select("*").order("created_at", { ascending: false });
+      state.resFlags = f.data || [];
+    }
+  }
+  async function fetchTotals(start, end) {
+    const key = start + "|" + end;
+    if (state.resTotalsCache[key]) return state.resTotalsCache[key];
+    const { data } = await sb.rpc("resourcing_totals", { p_start: start, p_end: end });
+    const map = {};
+    (data || []).forEach(r => { map[r.bucket] = Number(r.hours) || 0; });
+    state.resTotalsCache[key] = map;
+    return map;
+  }
+
+  // Re-render without wiping something the user is typing in
+  let pendingRender = false;
+  function safeRender() {
+    const a = document.activeElement;
+    if (a && content().contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { pendingRender = true; return; }
+    render();
+  }
+  content().addEventListener("focusout", () => { if (pendingRender) { pendingRender = false; setTimeout(safeRender, 50); } });
+
+  function subscribeResourcing() {
+    if (channels.resourcing) sb.removeChannel(channels.resourcing);
+    const onTime = async () => {
+      await loadTimeEntries();
+      if (["time", "resourcing"].includes(state.view) && !state.selectedProjectId) safeRender();
+      if (detailTaskId && el("#td-time-list")) renderTaskTime(detailTaskId);
+    };
+    const onMeta = async () => { await loadResourcingMeta(); if (state.view === "resourcing" && !state.selectedProjectId) safeRender(); };
+    channels.resourcing = sb.channel("resourcing-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "time_entries" }, onTime)
+      .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_meetings" }, onMeta)
+      .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_items" }, onMeta)
+      .on("postgres_changes", { event: "*", schema: "public", table: "resourcing_flags" }, onMeta)
+      .subscribe();
+  }
+
+  async function bootResourcing() {
+    el("#nav-resourcing").hidden = !canSeeResourcing();
+    await Promise.all([loadTimeEntries(), loadResourcingMeta()]);
+    subscribeResourcing();
+    if (["time", "resourcing"].includes(state.view)) render();
+  }
+
+  // ---------- writes ----------
+  async function addTimeEntry(row) {
+    const { error } = await sb.from("time_entries").insert({ person_id: me.id, created_by: me.id, source: "tool", ...row });
+    if (error) { alert("Couldn't log that time: " + error.message); return false; }
+    await loadTimeEntries();
+    return true;
+  }
+  async function deleteTimeEntry(id) {
+    await sb.from("time_entries").delete().eq("id", id);
+    await loadTimeEntries();
+  }
+  async function ensureMeeting(bu, date) {
+    let m = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
+    if (m) return m;
+    const { data } = await sb.from("resourcing_meetings").insert({ business_unit: bu, scheduled_for: date, held_on: date }).select().single();
+    if (data) state.resMeetings.push(data);
+    return data;
+  }
+
+  // =========================================================
+  // MY TIME view
+  // =========================================================
+  function projectOptions(selectedId) {
+    const withBu = state.projects.filter(p => p.businessUnit && p.unplannedStatus !== "declined")
+      .sort((a, b) => (a.businessUnit + a.name).localeCompare(b.businessUnit + b.name));
+    return `<option value="">No project</option>` + BUS.map(bu => {
+      const list = withBu.filter(p => p.businessUnit === bu);
+      return list.length ? `<optgroup label="${bu}">${list.map(p => `<option value="${p.id}" ${p.id === selectedId ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</optgroup>` : "";
+    }).join("");
+  }
+
+  function renderTime() {
+    if (!state.timeWeek) state.timeWeek = mondayOf(todayIso());
+    const week = state.timeWeek, weekEnd = addDays(week, 6);
+    el("#page-title").textContent = "My time";
+    el("#page-sub").textContent = `Week of ${fmtLong(week)}`;
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    wrap.innerHTML = `<button class="btn-ghost" id="tw-prev">Previous week</button><button class="btn-ghost" id="tw-today">This week</button><button class="btn-ghost" id="tw-next">Next week</button>`;
+    wrap.querySelector("#tw-prev").addEventListener("click", () => { state.timeWeek = addDays(week, -7); render(); });
+    wrap.querySelector("#tw-next").addEventListener("click", () => { state.timeWeek = addDays(week, 7); render(); });
+    wrap.querySelector("#tw-today").addEventListener("click", () => { state.timeWeek = mondayOf(todayIso()); render(); });
+
+    const mine = state.timeEntries.filter(e => e.person_id === me.id && e.entry_date >= week && e.entry_date <= weekEnd)
+      .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at));
+    const byBu = {};
+    mine.forEach(e => { byBu[e.business_unit] = (byBu[e.business_unit] || 0) + Number(e.hours); });
+    const total = mine.reduce((s, e) => s + Number(e.hours), 0);
+    const defaultDate = todayIso() >= week && todayIso() <= weekEnd ? todayIso() : week;
+
+    content().innerHTML = `
+      <div class="res-stack">
+        <div class="panel">
+          <h3>Log time</h3>
+          <div class="inline-form">
+            <input type="date" id="lt-date" value="${defaultDate}" aria-label="Date" />
+            <select id="lt-project" aria-label="Project" style="min-width:220px;">${projectOptions("")}</select>
+            <select id="lt-task" aria-label="Task" style="min-width:180px;"><option value="">No specific task</option></select>
+            <select id="lt-bu" aria-label="Business unit">${BUS.map(b => `<option>${b}</option>`).join("")}</select>
+            <input type="number" id="lt-hours" min="0.25" max="24" step="0.25" placeholder="Hours" style="width:90px;" aria-label="Hours" />
+            <input type="text" id="lt-notes" placeholder="Notes (optional)" style="flex:1;min-width:160px;" aria-label="Notes" />
+            <button class="btn" id="lt-save">Log time</button>
+          </div>
+          <div class="res-note" style="margin-top:8px;">Hours are decimal: 1.5 is an hour and a half. The business unit follows the project you pick.</div>
+        </div>
+        <div class="panel">
+          <h3>This week: ${fmtH(total)}</h3>
+          ${Object.keys(byBu).length ? `<div class="chip-row" style="margin-bottom:12px;">${BUS.filter(b => byBu[b]).map(b => `<span class="tag ${BU_TAG[b]}">${b} ${fmtH(byBu[b])}</span>`).join(" ")}</div>` : ""}
+          ${mine.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Day</th><th>Work</th><th>Business unit</th><th class="num">Hours</th><th>Notes</th><th></th></tr></thead>
+            <tbody>${mine.map(e => `<tr>
+              <td>${fmtShort(e.entry_date)}</td><td>${escapeHtml(entryLabel(e))}</td>
+              <td><span class="tag ${BU_TAG[e.business_unit]}">${e.business_unit}</span></td>
+              <td class="num">${fmtH(e.hours)}</td><td class="res-note">${escapeHtml(e.notes || "")}</td>
+              <td><button class="btn-text" data-del="${e.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+            : `<div class="empty-state">Nothing logged this week yet. Add your first entry above.</div>`}
+        </div>
+      </div>`;
+
+    const projSel = el("#lt-project"), taskSel = el("#lt-task"), buSel = el("#lt-bu");
+    const syncProject = () => {
+      const p = state.projects.find(p => p.id === projSel.value);
+      const tasks = p ? state.tasks.filter(t => t.projectIds.includes(p.id)) : [];
+      taskSel.innerHTML = `<option value="">No specific task</option>` + tasks.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
+      taskSel.disabled = !p;
+      if (p && p.businessUnit) { buSel.value = p.businessUnit; buSel.disabled = true; } else buSel.disabled = false;
+    };
+    projSel.addEventListener("change", syncProject);
+    syncProject();
+    el("#lt-save").addEventListener("click", async () => {
+      const hours = Number(el("#lt-hours").value);
+      const date = el("#lt-date").value;
+      if (!date || !(hours > 0 && hours <= 24)) { alert("Add a date and between 0 and 24 hours."); return; }
+      const ok = await addTimeEntry({ entry_date: date, hours, business_unit: buSel.value, project_id: projSel.value || null, task_id: taskSel.value || null, notes: el("#lt-notes").value.trim() || null });
+      if (ok) render();
+    });
+    content().querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteTimeEntry(b.dataset.del); render(); } }));
+  }
+
+  // Time section inside the task panel
+  function renderTaskTime(taskId) {
+    const box = el("#td-time");
+    if (!box) return;
+    const task = state.tasks.find(t => t.id === taskId);
+    const proj = task && task.projectIds.map(id => state.projects.find(p => p.id === id)).find(p => p && p.businessUnit);
+    const entries = state.timeEntries.filter(e => e.task_id === taskId).sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+    const total = entries.reduce((s, e) => s + Number(e.hours), 0);
+    box.innerHTML = `
+      <div class="section-label"><span>Time logged</span><span>${fmtH(total)}${task && task.estimatedHours ? ` of ${fmtH(task.estimatedHours)} estimated` : ""}</span></div>
+      <div id="td-time-list">${entries.map(e => {
+        const who = (personById(e.person_id) || {}).name || "Someone";
+        const mineOrAdmin = e.person_id === me.id || me.isAdmin;
+        return `<div class="list-row"><span>${escapeHtml(who)}, ${fmtShort(e.entry_date)}${e.notes ? ` <span class="res-note">${escapeHtml(e.notes)}</span>` : ""}</span><span>${fmtH(e.hours)}${mineOrAdmin ? ` <button class="btn-text" data-tdel="${e.id}">Remove</button>` : ""}</span></div>`;
+      }).join("")}</div>
+      <div class="inline-form" style="margin:8px 0 20px 0;">
+        <input type="date" id="tt-date" value="${todayIso()}" aria-label="Date" />
+        <input type="number" id="tt-hours" min="0.25" max="24" step="0.25" placeholder="Hours" style="width:80px;" aria-label="Hours" />
+        ${proj ? "" : `<select id="tt-bu" aria-label="Business unit">${BUS.map(b => `<option>${b}</option>`).join("")}</select>`}
+        <input type="text" id="tt-notes" placeholder="Notes (optional)" style="flex:1;min-width:120px;" aria-label="Notes" />
+        <button class="btn-ghost" id="tt-save">Log time</button>
+      </div>
+      ${proj ? "" : `<div class="res-note" style="margin:-14px 0 20px 0;">This task's project has no business unit yet, so pick one.</div>`}`;
+    box.querySelectorAll("[data-tdel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteTimeEntry(b.dataset.tdel); renderTaskTime(taskId); } }));
+    el("#tt-save").addEventListener("click", async () => {
+      const hours = Number(el("#tt-hours").value), date = el("#tt-date").value;
+      if (!date || !(hours > 0 && hours <= 24)) { alert("Add a date and between 0 and 24 hours."); return; }
+      const ok = await addTimeEntry({
+        entry_date: date, hours, task_id: taskId, project_id: proj ? proj.id : (task.projectIds[0] || null),
+        business_unit: proj ? proj.businessUnit : el("#tt-bu").value, notes: el("#tt-notes").value.trim() || null
+      });
+      if (ok) renderTaskTime(taskId);
+    });
+  }
+
+  // =========================================================
+  // RESOURCING view
+  // =========================================================
+  function renderResourcing() {
+    if (!canSeeResourcing()) { setView("dashboard"); return; }
+    const bu = me.isAdmin ? (state.resBu || "Education") : me.resBu;
+    state.resBu = bu;
+    const series = MEETING_SERIES[bu], schedule = meetingSchedule(bu);
+    if (!state.resMeetingDate || !schedule.includes(state.resMeetingDate)) state.resMeetingDate = defaultMeeting(bu);
+    const date = state.resMeetingDate, per = periodFor(bu, date), today = todayIso();
+
+    el("#page-title").textContent = `Resourcing: ${bu}`;
+    el("#page-sub").textContent = `Meeting with ${series.with}, ${fmtLong(date)}, ${series.how}`;
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    const nextUp = defaultMeeting(bu);
+    wrap.innerHTML = `
+      ${me.isAdmin ? `<select id="res-bu" aria-label="Business unit">${Object.keys(MEETING_SERIES).map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select>` : ""}
+      <select id="res-date" aria-label="Meeting">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>${fmtLong(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
+      ${me.isAdmin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : ""}`;
+    if (me.isAdmin) {
+      wrap.querySelector("#res-bu").addEventListener("change", (e) => { state.resBu = e.target.value; state.resMeetingDate = null; render(); });
+      wrap.querySelector("#res-import").addEventListener("click", openImportModal);
+    }
+    wrap.querySelector("#res-date").addEventListener("change", (e) => { state.resMeetingDate = e.target.value; render(); });
+
+    const counted = countedIds();
+    const members = buMembers(bu);
+    const entriesBu = state.timeEntries.filter(e => counted.has(e.person_id) && members.includes(e.business_unit));
+    const inPeriod = (e) => e.entry_date >= per.start && e.entry_date <= per.end;
+    const campaigns = state.projects.filter(p => members.includes(p.businessUnit) && p.unplannedStatus !== "declined")
+      .sort((a, b) => (a.priority || 999) - (b.priority || 999) || a.name.localeCompare(b.name));
+    const hoursOf = (pid, onlyPeriod) => entriesBu.filter(e => e.project_id === pid && (!onlyPeriod || inPeriod(e))).reduce((s, e) => s + Number(e.hours), 0);
+
+    // unlinked hours grouped by label
+    const unlinked = {};
+    entriesBu.filter(e => !e.project_id).forEach(e => {
+      const k = e.label || "(no description)";
+      unlinked[k] = unlinked[k] || { period: 0, all: 0 };
+      unlinked[k].all += Number(e.hours);
+      if (inPeriod(e)) unlinked[k].period += Number(e.hours);
+    });
+
+    const unplanned = state.projects.filter(p => members.includes(p.businessUnit) && p.isUnplanned)
+      .sort((a, b) => (b.requestedOn || "").localeCompare(a.requestedOn || ""));
+    const pipeline = campaigns.filter(p => p.status !== "launched" && (p.status === "planning" || ((p.startDate || "") <= per.nextEnd && (p.endDate || "9999") >= per.nextStart)))
+      .sort((a, b) => (a.endDate || "").localeCompare(b.endDate || ""));
+
+    const meeting = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
+    const buMeetingIds = new Set(state.resMeetings.filter(m => m.business_unit === bu).map(m => m.id));
+    const items = meeting ? state.resItems.filter(i => i.meeting_id === meeting.id) : [];
+    const earlierMeetingIds = new Set(state.resMeetings.filter(m => m.business_unit === bu && m.scheduled_for < date).map(m => m.id));
+    const carried = state.resItems.filter(i => i.kind === "action" && !i.done && earlierMeetingIds.has(i.meeting_id));
+    const admin = me.isAdmin;
+
+    const campaignRows = campaigns.map(p => {
+      const period = hoursOf(p.id, true), all = hoursOf(p.id, false);
+      const used = p.plannedHours ? all / p.plannedHours : null;
+      return `<tr>
+        <td>${admin ? `<input type="number" min="1" class="res-prio" data-pid="${p.id}" value="${p.priority || ""}" aria-label="Priority" style="width:52px;" />` : (p.priority || "")}</td>
+        <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.isUnplanned ? ` <span class="tag tag-team-marketing">Unplanned</span>` : ""}${p.businessUnit === "Delight" ? ` <span class="tag tag-team-delight">Delight</span>` : ""}</td>
+        <td><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span></td>
+        <td class="num">${admin ? `<input type="number" min="0" step="1" class="res-plan" data-pid="${p.id}" value="${p.plannedHours != null ? p.plannedHours : ""}" aria-label="Planned hours" />` : (p.plannedHours != null ? fmtH(p.plannedHours) : "Not set")}</td>
+        <td class="num">${fmtH(period)}</td>
+        <td class="num">${fmtH(all)}</td>
+        <td class="num ${used != null && used > 1 ? "res-flag-over" : ""}">${used == null ? "No plan" : pct(used)}</td>
+      </tr>`;
+    }).join("");
+    const unlinkedKeys = Object.keys(unlinked).filter(k => unlinked[k].all > 0);
+    const unlinkedRows = unlinkedKeys.map(k => `<tr>
+        <td></td><td class="res-note">${escapeHtml(k)}</td><td class="res-note">Not linked</td>
+        <td class="num">${admin ? `<select class="res-link" data-label="${escapeHtml(k)}" aria-label="Link to campaign" style="width:150px;text-align:left;"><option value="">Link to…</option>${campaigns.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>` : ""}</td>
+        <td class="num">${fmtH(unlinked[k].period)}</td><td class="num">${fmtH(unlinked[k].all)}</td><td></td></tr>`).join("");
+
+    content().innerHTML = `
+      <div class="res-period">${per.isFirst ? "Baseline meeting. " : ""}Hours reviewed: ${fmtLong(per.start)} to ${fmtLong(per.end)}. Next period: ${fmtLong(per.nextStart)} to ${fmtLong(per.nextEnd)}.</div>
+      <div class="res-stack">
+        <div class="panel">
+          <h3>1. Hours vs allocation <span class="res-note">5 min</span></h3>
+          <div id="res-alloc"><div class="res-note">Loading hours…</div></div>
+        </div>
+
+        <div class="panel">
+          <div class="section-label"><h3 style="margin:0;">2. Campaigns: planned vs actual <span class="res-note">15 min</span></h3>${admin ? `<button class="btn-ghost" id="res-add-campaign">Add campaign</button>` : ""}</div>
+          ${campaigns.length || unlinkedKeys.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Priority</th><th>Campaign</th><th>Status</th><th class="num">Planned</th><th class="num">This period</th><th class="num">To date</th><th class="num">Plan used</th></tr></thead>
+            <tbody>${campaignRows}${unlinkedRows}</tbody></table></div>`
+            : `<div class="empty-state">No ${bu} campaigns yet.${admin ? " Add the campaigns you agree with " + series.with + " to build the baseline." : ""}</div>`}
+          ${unlinkedKeys.length && admin ? `<div class="res-note" style="margin-top:8px;">Rows marked "Not linked" are imported hours. Linking one moves every entry with that description onto the campaign.</div>` : ""}
+        </div>
+
+        <div class="panel">
+          <h3>3. Unplanned requests <span class="res-note">10 min</span></h3>
+          ${unplanned.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Request</th><th>Requested</th><th>Status</th><th>Dropped to make room</th><th class="num">Hours to date</th></tr></thead>
+            <tbody>${unplanned.map(p => {
+              const isNew = p.requestedOn && p.requestedOn >= per.start && p.requestedOn <= per.end;
+              const swap = p.swappedFor && state.projects.find(x => x.id === p.swappedFor);
+              return `<tr>
+                <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${isNew ? ` <span class="tag tag-team-marketing">New this period</span>` : ""}</td>
+                <td>${p.requestedOn ? fmtShort(p.requestedOn) : "—"}</td>
+                <td>${admin ? `<select class="res-ustatus" data-pid="${p.id}" style="width:auto;text-align:left;">${Object.keys(UNPLANNED_LABEL).map(k => `<option value="${k}" ${k === (p.unplannedStatus || "logged") ? "selected" : ""}>${UNPLANNED_LABEL[k]}</option>`).join("")}</select>` : UNPLANNED_LABEL[p.unplannedStatus || "logged"]}</td>
+                <td>${admin && p.unplannedStatus === "urgent_swap" ? `<select class="res-swap" data-pid="${p.id}" style="width:auto;text-align:left;"><option value="">Choose…</option>${campaigns.filter(c => c.id !== p.id).map(c => `<option value="${c.id}" ${c.id === p.swappedFor ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select>` : (swap ? escapeHtml(swap.name) : "—")}</td>
+                <td class="num">${fmtH(hoursOf(p.id, false))}</td></tr>`;
+            }).join("")}</tbody></table></div>`
+            : `<div class="empty-state">No unplanned requests for ${bu}.${admin ? " Use Add campaign and tick Unplanned request to log one." : ""}</div>`}
+        </div>
+
+        <div class="panel">
+          <h3>4. Next period pipeline <span class="res-note">10 min</span></h3>
+          ${pipeline.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Campaign</th><th>Dates</th><th class="num">Planned hours left</th></tr></thead>
+            <tbody>${pipeline.map(p => `<tr><td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a></td><td>${fmtShort(p.startDate)} to ${fmtShort(p.endDate)}</td><td class="num">${p.plannedHours != null ? fmtH(Math.max(0, p.plannedHours - hoursOf(p.id, false))) : "No plan"}</td></tr>`).join("")}</tbody></table></div>
+            <div class="res-note" id="res-capacity" style="margin-top:10px;"></div>`
+            : `<div class="empty-state">Nothing scheduled for ${fmtShort(per.nextStart)} to ${fmtShort(per.nextEnd)}.</div>`}
+        </div>
+
+        <div class="panel">
+          <h3>5. Decisions and actions <span class="res-note">5 min</span></h3>
+          ${meeting ? `
+            ${admin ? `<div class="field"><label for="res-notes">Notes</label><textarea id="res-notes" rows="4" class="res-textarea">${escapeHtml(meeting.notes || "")}</textarea></div>`
+              : (meeting.notes ? `<div class="res-notes-read">${escapeHtml(meeting.notes)}</div>` : "")}
+            ${items.length ? items.map(i => `<div class="list-row">
+              <span>${i.kind === "action" ? `<input type="checkbox" class="res-done" data-iid="${i.id}" ${i.done ? "checked" : ""} ${admin ? "" : "disabled"} aria-label="Done" /> ` : ""}<strong style="font-weight:500;">${i.kind === "decision" ? "Decision" : "Action"}:</strong> ${escapeHtml(i.text)}${i.owner ? ` <span class="res-note">(${escapeHtml(i.owner)}${i.due_date ? ", " + fmtShort(i.due_date) : ""})</span>` : ""}</span>
+              ${admin ? `<button class="btn-text" data-idel="${i.id}">Remove</button>` : ""}</div>`).join("") : `<div class="res-note" style="margin-bottom:8px;">No decisions or actions recorded yet.</div>`}
+            ${admin ? `<div class="inline-form" style="margin-top:10px;">
+              <select id="ri-kind" aria-label="Type"><option value="decision">Decision</option><option value="action">Action</option></select>
+              <input type="text" id="ri-text" placeholder="What was decided or needs doing" style="flex:1;min-width:200px;" aria-label="Text" />
+              <input type="text" id="ri-owner" placeholder="Owner" style="width:110px;" aria-label="Owner" />
+              <input type="date" id="ri-due" aria-label="Due date" />
+              <button class="btn-ghost" id="ri-add">Add</button></div>` : ""}`
+            : admin ? `<button class="btn" id="res-start-notes">Start notes for this meeting</button>` : `<div class="res-note">No notes recorded for this meeting yet.</div>`}
+          ${carried.length ? `<div class="section-label" style="margin-top:18px;">Open actions from earlier meetings</div>${carried.map(i => {
+            const m = state.resMeetings.find(m => m.id === i.meeting_id);
+            return `<div class="list-row"><span><input type="checkbox" class="res-done" data-iid="${i.id}" ${admin ? "" : "disabled"} aria-label="Done" /> ${escapeHtml(i.text)}${i.owner ? ` <span class="res-note">(${escapeHtml(i.owner)})</span>` : ""}</span><span class="res-note">from ${m ? fmtShort(m.scheduled_for) : "earlier"}</span></div>`;
+          }).join("")}` : ""}
+        </div>
+
+        ${admin ? renderFlagsPanel(bu, meeting) : ""}
+      </div>`;
+
+    // allocation (async totals via secure function)
+    fetchTotals(per.start, per.end).then(t => {
+      const box = el("#res-alloc");
+      if (!box) return;
+      const total = t.Total || 0;
+      const rows = (admin ? ["Education", "Planning Center", "Corporate"] : [bu]).map(b => {
+        const h = t[b] || 0, share = total ? h / total : 0, target = BU_TARGET[b];
+        let verdict = "";
+        if (target != null && total) {
+          const diff = Math.round((share - target) * 100);
+          verdict = Math.abs(diff) <= 5 ? "On target" : diff < 0 ? `${-diff} points under target` : `${diff} points over target`;
+        } else if (b === "Corporate" && total) verdict = "No target, counts against both units";
+        return `<div class="alloc-row">
+          <div><span class="tag ${BU_TAG[b]}">${b}</span></div>
+          <div><div class="alloc-bar"><div class="alloc-fill" style="width:${Math.min(100, share * 100)}%;background:${b === "Education" ? "var(--teal)" : b === "Planning Center" ? "var(--coral)" : "var(--ink-faint)"};"></div>${target != null ? `<div class="alloc-target" style="left:${target * 100}%;" title="Target ${pct(target)}"></div>` : ""}</div>
+            <div class="res-note" style="margin-top:4px;">${verdict}</div></div>
+          <div style="text-align:right;"><span class="alloc-num">${total ? pct(share) : "—"}</span> <span class="res-note">${fmtH(h)}${target != null ? `, target ${pct(target)}` : ""}</span></div>
+        </div>`;
+      }).join("");
+      box.innerHTML = total ? rows + `<div class="res-note" style="margin-top:10px;">Marketing total for the period: ${fmtH(total)} (Marita, Daisy and Steph). The line on each bar marks the target.</div>`
+        : `<div class="res-note">No hours logged between ${fmtShort(per.start)} and ${fmtShort(per.end)} yet.</div>`;
+    });
+    const capBox = el("#res-capacity");
+    if (capBox && BU_TARGET[bu] != null) {
+      fetchTotals(addDays(today, -28), addDays(today, -1)).then(t => {
+        if (!t.Total || !el("#res-capacity")) return;
+        const days = (new Date(per.nextEnd) - new Date(per.nextStart)) / 86400000 + 1;
+        const est = t.Total / 28 * days * BU_TARGET[bu];
+        el("#res-capacity").textContent = `Expected ${bu} capacity next period: about ${fmtH(est)}, based on the team's last four weeks and the ${pct(BU_TARGET[bu])} allocation.`;
+      });
+    }
+
+    // events
+    content().querySelectorAll("[data-open]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.selectedProjectId = a.dataset.open; render(); }));
+    if (!admin) {
+      return;
+    }
+    content().querySelectorAll(".res-plan").forEach(inp => inp.addEventListener("change", () => updateProjectField(inp.dataset.pid, { plannedHours: inp.value === "" ? null : Number(inp.value) })));
+    content().querySelectorAll(".res-prio").forEach(inp => inp.addEventListener("change", () => updateProjectField(inp.dataset.pid, { priority: inp.value === "" ? null : Number(inp.value) })));
+    content().querySelectorAll(".res-ustatus").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { unplannedStatus: s.value, ...(s.value !== "urgent_swap" ? { swappedFor: null } : {}) })));
+    content().querySelectorAll(".res-swap").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { swappedFor: s.value || null })));
+    content().querySelectorAll(".res-link").forEach(s => s.addEventListener("change", async () => {
+      if (!s.value) return;
+      const label = s.dataset.label === "(no description)" ? null : s.dataset.label;
+      let q = sb.from("time_entries").update({ project_id: s.value }).is("project_id", null).in("business_unit", members);
+      q = label === null ? q.is("label", null) : q.eq("label", label);
+      await q;
+      await loadTimeEntries(); render();
+    }));
+    const addBtn = el("#res-add-campaign");
+    if (addBtn) addBtn.addEventListener("click", () => openCampaignModal(bu));
+    const startBtn = el("#res-start-notes");
+    if (startBtn) startBtn.addEventListener("click", async () => { await ensureMeeting(bu, date); render(); });
+    const notes = el("#res-notes");
+    if (notes) notes.addEventListener("blur", async () => {
+      if (notes.value === (meeting.notes || "")) return;
+      meeting.notes = notes.value;
+      await sb.from("resourcing_meetings").update({ notes: notes.value, updated_at: new Date().toISOString() }).eq("id", meeting.id);
+    });
+    const riAdd = el("#ri-add");
+    if (riAdd) riAdd.addEventListener("click", async () => {
+      const text = el("#ri-text").value.trim();
+      if (!text) return;
+      await sb.from("resourcing_items").insert({ meeting_id: meeting.id, kind: el("#ri-kind").value, text, owner: el("#ri-owner").value.trim() || null, due_date: el("#ri-due").value || null });
+      await loadResourcingMeta(); render();
+    });
+    content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => { await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid); await loadResourcingMeta(); render(); }));
+    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this item?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
+    bindFlagsPanel(bu, date);
+  }
+
+  // ---------- flags for Brendon (admin only) ----------
+  function renderFlagsPanel(bu, meeting) {
+    const open = state.resFlags.filter(f => f.status !== "resolved");
+    const resolved = state.resFlags.filter(f => f.status === "resolved").slice(0, 5);
+    const row = (f) => `<div class="list-row" style="align-items:flex-start;gap:12px;">
+      <span><span class="tag ${BU_TAG[f.business_unit]}">${f.business_unit}</span> ${escapeHtml(f.text)}${f.outcome ? `<div class="res-note">Outcome: ${escapeHtml(f.outcome)}</div>` : ""}</span>
+      <span style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <select class="flag-status" data-fid="${f.id}" aria-label="Status"><option value="open" ${f.status === "open" ? "selected" : ""}>To raise</option><option value="raised" ${f.status === "raised" ? "selected" : ""}>Raised with Brendon</option><option value="resolved" ${f.status === "resolved" ? "selected" : ""}>Resolved</option></select>
+      </span></div>`;
+    return `<div class="panel">
+      <h3>Flags for Brendon</h3>
+      <div class="res-note" style="margin-bottom:10px;">Only you can see this list. It covers every business unit.</div>
+      ${open.length ? open.map(row).join("") : `<div class="res-note" style="margin-bottom:8px;">No open flags.</div>`}
+      <div class="inline-form" style="margin-top:10px;">
+        <input type="text" id="fl-text" placeholder="What needs raising, e.g. Education 15 points over target two meetings running" style="flex:1;min-width:240px;" aria-label="Flag" />
+        <button class="btn-ghost" id="fl-add">Add flag for ${bu}</button>
+      </div>
+      ${resolved.length ? `<div class="section-label" style="margin-top:16px;">Recently resolved</div>${resolved.map(row).join("")}` : ""}
+    </div>`;
+  }
+  function bindFlagsPanel(bu, date) {
+    const add = el("#fl-add");
+    if (!add) return;
+    add.addEventListener("click", async () => {
+      const text = el("#fl-text").value.trim();
+      if (!text) return;
+      const meeting = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
+      await sb.from("resourcing_flags").insert({ business_unit: bu, meeting_id: meeting ? meeting.id : null, text });
+      await loadResourcingMeta(); render();
+    });
+    content().querySelectorAll(".flag-status").forEach(s => s.addEventListener("change", async () => {
+      const patch = { status: s.value };
+      if (s.value === "resolved") { const o = prompt("What was the outcome? (optional)"); if (o) patch.outcome = o; }
+      await sb.from("resourcing_flags").update(patch).eq("id", s.dataset.fid);
+      await loadResourcingMeta(); render();
+    }));
+  }
+
+  // ---------- add campaign / unplanned request ----------
+  function openCampaignModal(bu) {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:420px;"><h3>Add campaign</h3>
+      <div class="field"><label for="cm-name">Campaign name</label><input id="cm-name" type="text" placeholder="e.g. Black Friday 2027 courses" /></div>
+      <div class="field"><label for="cm-bu">Business unit</label><select id="cm-bu">${BUS.map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select></div>
+      <div class="field"><label for="cm-hours">Planned hours</label><input id="cm-hours" type="number" min="0" step="1" /></div>
+      <div class="field"><label for="cm-prio">Priority (1 is highest)</label><input id="cm-prio" type="number" min="1" /></div>
+      <div class="field"><label for="cm-start">Start date</label><input id="cm-start" type="date" /></div>
+      <div class="field"><label for="cm-end">Target end date</label><input id="cm-end" type="date" /></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);"><input type="checkbox" id="cm-unplanned" /> Unplanned request (logged for the next meeting)</label>
+      <div class="modal-actions"><button class="btn-ghost" id="cm-cancel">Cancel</button><button class="btn" id="cm-save">Add campaign</button></div>
+    </div></div>`;
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#cm-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#cm-save").addEventListener("click", async () => {
+      const name = el("#cm-name").value.trim();
+      if (!name) return;
+      const unplanned = el("#cm-unplanned").checked;
+      await addProject({
+        name, team: "Marketing", client: "", status: "planning", visibleToClient: false, portfolioIds: [],
+        startDate: el("#cm-start").value || todayIso(), endDate: el("#cm-end").value || todayIso(),
+        businessUnit: el("#cm-bu").value, plannedHours: el("#cm-hours").value === "" ? null : Number(el("#cm-hours").value),
+        priority: el("#cm-prio").value === "" ? null : Number(el("#cm-prio").value),
+        isUnplanned: unplanned, unplannedStatus: unplanned ? "logged" : null, requestedOn: unplanned ? todayIso() : null
+      });
+      root.innerHTML = "";
+    });
+  }
+
+  // ---------- import from the Marketing time log workbook ----------
+  function parseDelimited(text) {
+    if (text.includes("\t")) return text.split(/\r?\n/).map(l => l.split("\t"));
+    const rows = []; let row = [], cur = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (c !== "\r") cur += c;
+    }
+    if (cur.length || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+  function parseSheetDate(s) {
+    s = (s || "").trim();
+    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+  }
+  function analyseImport(text) {
+    const rows = parseDelimited(text);
+    const hIdx = rows.findIndex(r => r.map(c => c.trim().toLowerCase()).includes("date") && r.map(c => c.trim().toLowerCase()).includes("team member"));
+    if (hIdx < 0) return { error: "Couldn't find the header row. It needs the columns Date, Team member, Business unit, Project / task and Hours." };
+    const head = rows[hIdx].map(c => c.trim().toLowerCase());
+    const col = (n) => head.indexOf(n);
+    const ci = { date: col("date"), person: col("team member"), bu: col("business unit"), label: col("project / task"), hours: col("hours"), notes: col("notes") };
+    if ([ci.date, ci.person, ci.bu, ci.hours].some(i => i < 0)) return { error: "The header row is missing Date, Team member, Business unit or Hours." };
+    const existing = new Set(state.timeEntries.filter(e => e.source === "import").map(e => [e.person_id, e.entry_date, e.business_unit, e.label || "", Number(e.hours)].join("|")));
+    const ok = [], skipped = []; let dupes = 0;
+    rows.slice(hIdx + 1).forEach((r, n) => {
+      const get = (i) => i >= 0 ? (r[i] || "").trim() : "";
+      if (!r.some(c => c && c.trim())) return;
+      const line = hIdx + n + 2;
+      const date = parseSheetDate(get(ci.date));
+      const name = get(ci.person).toLowerCase();
+      const person = state.people.find(p => { const pn = (p.name || "").toLowerCase(); return pn === name || pn.split(/\s+/)[0] === name; });
+      const bu = BUS.find(b => b.toLowerCase() === get(ci.bu).toLowerCase());
+      const hours = Number(get(ci.hours).replace(",", "."));
+      const label = get(ci.label) || null;
+      if (!date) return skipped.push(`Row ${line}: date "${get(ci.date)}" not recognised`);
+      if (!person) return skipped.push(`Row ${line}: no staff member called "${get(ci.person)}"`);
+      if (!bu) return skipped.push(`Row ${line}: business unit "${get(ci.bu)}" not recognised`);
+      if (!(hours > 0 && hours <= 24)) return skipped.push(`Row ${line}: hours "${get(ci.hours)}" not between 0 and 24`);
+      const key = [person.id, date, bu, label || "", hours].join("|");
+      if (existing.has(key)) { dupes++; return; }
+      existing.add(key);
+      const proj = label && state.projects.find(p => p.name.toLowerCase() === label.toLowerCase());
+      ok.push({ person_id: person.id, entry_date: date, business_unit: bu, hours, label, notes: get(ci.notes) || null, project_id: proj ? proj.id : null, source: "import", created_by: me.id });
+    });
+    return { ok, skipped, dupes };
+  }
+  function openImportModal() {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:520px;"><h3>Import workbook hours</h3>
+      <p class="res-note">In the Marketing time log, open the Time log tab and either choose File, Download, CSV, or select the table including its header row and copy it. Then load or paste it here. Rows already imported are skipped.</p>
+      <div class="field"><label for="im-file">CSV file</label><input id="im-file" type="file" accept=".csv,text/csv" /></div>
+      <div class="field"><label for="im-text">Or paste the rows</label><textarea id="im-text" rows="6" class="res-textarea" placeholder="Date, Team member, Business unit, Project / task, Hours, Notes"></textarea></div>
+      <div id="im-preview" class="res-note"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="im-cancel">Cancel</button><button class="btn" id="im-go" disabled>Import</button></div>
+    </div></div>`;
+    let result = null;
+    const preview = () => {
+      const text = el("#im-text").value;
+      if (!text.trim()) { el("#im-preview").innerHTML = ""; el("#im-go").disabled = true; return; }
+      result = analyseImport(text);
+      if (result.error) { el("#im-preview").innerHTML = `<span class="res-flag-over">${escapeHtml(result.error)}</span>`; el("#im-go").disabled = true; return; }
+      const linked = result.ok.filter(r => r.project_id).length;
+      el("#im-preview").innerHTML = `${result.ok.length} rows ready (${linked} matched to a campaign by name, the rest can be linked from the Resourcing view). ${result.dupes ? result.dupes + " already imported. " : ""}${result.skipped.length ? `${result.skipped.length} skipped:<br>${result.skipped.slice(0, 8).map(escapeHtml).join("<br>")}${result.skipped.length > 8 ? "<br>…" : ""}` : ""}`;
+      el("#im-go").disabled = !result.ok.length;
+      el("#im-go").textContent = `Import ${result.ok.length} rows`;
+    };
+    el("#im-text").addEventListener("input", preview);
+    el("#im-file").addEventListener("change", async (e) => { const f = e.target.files[0]; if (f) { el("#im-text").value = await f.text(); preview(); } });
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#im-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#im-go").addEventListener("click", async () => {
+      if (!result || !result.ok.length) return;
+      el("#im-go").disabled = true; el("#im-go").textContent = "Importing…";
+      for (let i = 0; i < result.ok.length; i += 200) {
+        const { error } = await sb.from("time_entries").insert(result.ok.slice(i, i + 200));
+        if (error) { el("#im-preview").innerHTML = `<span class="res-flag-over">Import stopped: ${escapeHtml(error.message)}</span>`; await loadTimeEntries(); return; }
+      }
+      await loadTimeEntries();
+      root.innerHTML = "";
+      render();
     });
   }
 })();
