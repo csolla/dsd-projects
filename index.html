@@ -574,6 +574,7 @@
       budget: p.budget, budgetSpent: p.budget_spent || 0,
       businessUnit: p.business_unit || null, plannedHours: p.planned_hours != null ? Number(p.planned_hours) : null, priority: p.priority,
       isUnplanned: !!p.is_unplanned, unplannedStatus: p.unplanned_status, requestedOn: p.requested_on, swappedFor: p.swapped_for,
+      requestedBy: p.requested_by, requestDetails: p.request_details, requestDeadline: p.request_deadline, requestUrgent: !!p.request_urgent,
       portfolioIds: (pf || []).filter(r => r.project_id === p.id).map(r => r.portfolio_id),
       clientIds: (pc || []).filter(r => r.project_id === p.id).map(r => r.client_id)
     }));
@@ -757,15 +758,17 @@
   // WRITE HELPERS
   // =========================================================
   async function addProject(data) {
-    const { data: row } = await sb.from("projects").insert({
+    const { data: row, error } = await sb.from("projects").insert({
       name: data.name, team: data.team, client_company: data.client, status: data.status,
       start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient,
       business_unit: data.businessUnit || null, planned_hours: data.plannedHours != null ? data.plannedHours : null, priority: data.priority != null ? data.priority : null,
-      is_unplanned: !!data.isUnplanned, unplanned_status: data.unplannedStatus || null, requested_on: data.requestedOn || null
+      is_unplanned: !!data.isUnplanned, unplanned_status: data.unplannedStatus || null, requested_on: data.requestedOn || null,
+      ...(data.requestedBy ? { requested_by: data.requestedBy, request_details: data.requestDetails || null, request_deadline: data.requestDeadline || null, request_urgent: !!data.requestUrgent } : {})
     }).select().single();
     if (row && data.portfolioIds && data.portfolioIds.length) {
       await sb.from("project_portfolios").insert(data.portfolioIds.map(fid => ({ project_id: row.id, portfolio_id: fid })));
     }
+    return { row, error };
   }
   async function updateProjectField(projectId, fields) {
     const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company", budgetSpent: "budget_spent",
@@ -960,15 +963,15 @@
       <div class="notif-panel-head"><span>Notifications</span>${items.some(n=>!n.read) ? '<button class="btn-text" id="notif-mark-all" style="font-size:11px;">Mark all read</button>' : ''}</div>
       ${items.length ? items.map(n => `
         <button class="notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-project="${n.projectId}" data-task="${n.taskId}" data-type="${n.type}" data-bu="${escapeHtml(n.businessUnit || '')}">
-          ${n.type === 'resourcing_limit' ? `<div><strong>Monthly limit:</strong> ${escapeHtml(n.message || '')}</div>` : `<div><strong>${escapeHtml(n.fromName)}</strong> ${n.type === 'mentioned' ? 'mentioned you on' : 'assigned you'} "${escapeHtml(n.taskTitle)}"</div>`}
-          <div class="notif-meta">${n.type === 'resourcing_limit' ? 'Resourcing' : escapeHtml(n.projectName)} · ${new Date(n.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
+          ${n.message ? `<div><strong>${n.type === 'work_request' ? 'Work request' : 'Monthly limit'}:</strong> ${escapeHtml(n.message)}</div>` : `<div><strong>${escapeHtml(n.fromName)}</strong> ${n.type === 'mentioned' ? 'mentioned you on' : 'assigned you'} "${escapeHtml(n.taskTitle)}"</div>`}
+          <div class="notif-meta">${n.message ? 'Resourcing' : escapeHtml(n.projectName)} · ${new Date(n.createdAt).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}</div>
         </button>`).join("") : `<div class="notif-empty">No notifications yet.</div>`}`;
     const markAll = document.getElementById("notif-mark-all");
     if (markAll) markAll.addEventListener("click", (e) => { e.stopPropagation(); items.filter(n=>!n.read).forEach(n => markNotificationRead(n.id)); });
     panel.querySelectorAll(".notif-item").forEach(btn => {
       btn.addEventListener("click", () => {
         markNotificationRead(btn.dataset.id);
-        if (btn.dataset.type === "resourcing_limit") {
+        if (btn.dataset.type === "resourcing_limit" || btn.dataset.type === "work_request") {
           toggleNotifPanel();
           if (btn.dataset.bu && MEETING_SERIES[btn.dataset.bu]) state.resBu = btn.dataset.bu;
           state.resMonth = null;
@@ -2190,12 +2193,13 @@
     wrap.innerHTML = `
       ${me.isAdmin ? `<select id="res-bu" aria-label="Business unit">${Object.keys(MEETING_SERIES).map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select>` : ""}
       <select id="res-date" aria-label="Meeting">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>${fmtLong(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
-      ${me.isAdmin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : ""}`;
+      ${me.isAdmin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : `<button class="btn" id="res-request">Request work</button>`}`;
     if (me.isAdmin) {
       wrap.querySelector("#res-bu").addEventListener("change", (e) => { state.resBu = e.target.value; state.resMeetingDate = null; render(); });
       wrap.querySelector("#res-import").addEventListener("click", openImportModal);
     }
     wrap.querySelector("#res-date").addEventListener("change", (e) => { state.resMeetingDate = e.target.value; render(); });
+    if (!me.isAdmin) wrap.querySelector("#res-request").addEventListener("click", () => openRequestModal(bu));
 
     const counted = countedIds();
     const members = buMembers(bu);
@@ -2266,18 +2270,19 @@
         <div class="panel">
           <h3>3. Unplanned requests <span class="res-note">10 min</span></h3>
           ${unplanned.length ? `<div class="table-scroll"><table class="res-table">
-            <thead><tr><th>Request</th><th>Requested</th><th>Status</th><th>Dropped to make room</th><th class="num">Hours to date</th></tr></thead>
+            <thead><tr><th>Request</th><th>Requested</th><th>Needed by</th><th>Status</th><th>Dropped to make room</th><th class="num">Hours to date</th></tr></thead>
             <tbody>${unplanned.map(p => {
               const isNew = p.requestedOn && p.requestedOn >= per.start && p.requestedOn <= per.end;
               const swap = p.swappedFor && state.projects.find(x => x.id === p.swappedFor);
               return `<tr>
-                <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${isNew ? ` <span class="tag tag-team-marketing">New this period</span>` : ""}</td>
-                <td>${p.requestedOn ? fmtShort(p.requestedOn) : "—"}</td>
+                <td style="max-width:340px;"><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.requestUrgent ? ` <span class="tag" style="background:var(--coral-soft);color:var(--coral);">Urgent</span>` : ""}${isNew ? ` <span class="tag tag-team-marketing">New this period</span>` : ""}${p.requestDetails ? `<div class="res-note" style="margin-top:3px;white-space:pre-wrap;">${escapeHtml(p.requestDetails)}</div>` : ""}</td>
+                <td style="white-space:nowrap;">${p.requestedOn ? fmtShort(p.requestedOn) : "—"}${p.requestedBy ? `<div class="res-note">by ${escapeHtml((personById(p.requestedBy) || {}).name || "director")}</div>` : ""}</td>
+                <td style="white-space:nowrap;">${p.requestDeadline ? fmtShort(p.requestDeadline) : "—"}</td>
                 <td>${admin ? `<select class="res-ustatus" data-pid="${p.id}" style="width:auto;text-align:left;">${Object.keys(UNPLANNED_LABEL).map(k => `<option value="${k}" ${k === (p.unplannedStatus || "logged") ? "selected" : ""}>${UNPLANNED_LABEL[k]}</option>`).join("")}</select>` : UNPLANNED_LABEL[p.unplannedStatus || "logged"]}</td>
                 <td>${admin && p.unplannedStatus === "urgent_swap" ? `<select class="res-swap" data-pid="${p.id}" style="width:auto;text-align:left;"><option value="">Choose…</option>${campaigns.filter(c => c.id !== p.id).map(c => `<option value="${c.id}" ${c.id === p.swappedFor ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select>` : (swap ? escapeHtml(swap.name) : "—")}</td>
                 <td class="num">${fmtH(hoursOf(p.id, false))}</td></tr>`;
             }).join("")}</tbody></table></div>`
-            : `<div class="empty-state">No unplanned requests for ${bu}.${admin ? " Use Add campaign and tick Unplanned request to log one." : ""}</div>`}
+            : `<div class="empty-state">No unplanned requests for ${bu}.${admin ? " Requests from " + series.with + " land here, or use Add campaign and tick Unplanned request." : " Use Request work at the top to ask Marketing for something new."}</div>`}
         </div>
 
         <div class="panel">
@@ -2584,7 +2589,7 @@
       else if (to) off.push({ date: d, kind: "off", id: to.id, label: to.note || "Time off" });
       else days.push(d);
     }
-    return { days: days.length, off, hours: days.length * (Number(p.daily_hours) || 0) };
+    return { days: days.length, dayList: days, off, hours: days.length * (Number(p.daily_hours) || 0) };
   }
 
   function limitPanelHtml() {
@@ -2620,36 +2625,50 @@
 
   // ---------- admin: team capacity editor ----------
   function capacityPanelHtml() {
-    const month = state.resMonth, end = monthEnd(month);
-    const ppl = state.people.filter(p => p.counts_in_capacity);
-    const rows = ppl.map(p => ({ p, b: personMonthBreakdown(p, month) }));
-    const gross = rows.reduce((s, r) => s + r.b.hours, 0), net = Math.round(gross * CAPACITY_BUFFER * 10) / 10;
+    const month = state.resMonth, end = monthEnd(month), today = todayIso();
+    const counted = state.people.filter(p => p.counts_in_capacity);
+    const listed = state.people.filter(p => p.role === "staff" && (p.counts_in_capacity || p.team === "Marketing"))
+      .sort((a, b) => (b.counts_in_capacity - a.counts_in_capacity) || (a.name || "").localeCompare(b.name || ""));
+    const rows = listed.map(p => ({ p, b: personMonthBreakdown(p, month) }));
+    const gross = rows.filter(r => r.p.counts_in_capacity).reduce((s, r) => s + r.b.hours, 0), net = Math.round(gross * CAPACITY_BUFFER * 10) / 10;
     const hols = state.holidays.filter(h => h.holiday_date >= month && h.holiday_date <= end);
+    // logged vs available up to today (or the whole month if it's over)
+    const upTo = today < end ? today : end;
+    const loggedCell = (p) => {
+      if (!p.counts_in_capacity || month > today) return `<span class="res-note">—</span>`;
+      const availDays = personMonthBreakdown(p, month).dayList.filter(d => d <= upTo).length;
+      const avail = availDays * (Number(p.daily_hours) || 0);
+      const logged = state.timeEntries.filter(e => e.person_id === p.id && e.entry_date >= month && e.entry_date <= upTo).reduce((s, e) => s + Number(e.hours), 0);
+      const ratio = avail ? logged / avail : 0;
+      return `<span class="${avail && ratio < 0.8 ? "res-flag-over" : ""}">${fmtH(logged)} of ${fmtH(avail)}</span>${avail ? ` <span class="res-note">(${pct(ratio)})</span>` : ""}`;
+    };
     return `<div class="panel">
       <h3>Team capacity: ${fmtMonth(month)}</h3>
-      <div class="res-note" style="margin-bottom:10px;">Only you can see and edit this. Directors only see the resulting limits.</div>
-      ${ppl.length ? `<div class="table-scroll"><table class="res-table">
-        <thead><tr><th>Person</th><th class="num">Hours a day</th><th>Bank holidays</th><th class="num">Working days</th><th>Days off this month</th><th class="num">Hours</th></tr></thead>
-        <tbody>${rows.map(({ p, b }) => `<tr>
-          <td>${escapeHtml(p.name)}</td>
-          <td class="num"><input type="number" min="0" max="12" step="0.5" class="cap-daily" data-pid="${p.id}" value="${p.daily_hours != null ? p.daily_hours : ""}" aria-label="Hours a day for ${escapeHtml(p.name)}" /></td>
+      <div class="res-note" style="margin-bottom:10px;">Only you can see and edit this. Directors only see the resulting limits. Tick Counted for everyone whose hours make up the 70/30.</div>
+      ${listed.length ? `<div class="table-scroll"><table class="res-table">
+        <thead><tr><th>Counted</th><th>Person</th><th class="num">Hours a day</th><th>Bank holidays</th><th class="num">Working days</th><th>Days off this month</th><th class="num">Hours</th><th class="num" title="Hours logged so far this month vs the hours they were available, before the buffer">Logged so far</th></tr></thead>
+        <tbody>${rows.map(({ p, b }) => `<tr style="${p.counts_in_capacity ? "" : "opacity:0.55;"}">
+          <td><input type="checkbox" class="cap-counted" data-pid="${p.id}" ${p.counts_in_capacity ? "checked" : ""} aria-label="Count ${escapeHtml(p.name || "")} in capacity" style="width:auto;" /></td>
+          <td>${escapeHtml(p.name || p.email || "")}</td>
+          <td class="num"><input type="number" min="0" max="12" step="0.5" class="cap-daily" data-pid="${p.id}" value="${p.daily_hours != null ? p.daily_hours : ""}" aria-label="Hours a day for ${escapeHtml(p.name || "")}" /></td>
           <td><select class="cap-region" data-pid="${p.id}" style="width:auto;text-align:left;" aria-label="Bank holiday calendar"><option value="">None</option>${HOLIDAY_REGIONS.map(r => `<option ${r === p.holiday_region ? "selected" : ""}>${r}</option>`).join("")}</select></td>
-          <td class="num">${b.days}</td>
-          <td>${b.off.length ? b.off.map(o => o.kind === "off"
+          <td class="num">${p.counts_in_capacity ? b.days : "—"}</td>
+          <td>${p.counts_in_capacity && b.off.length ? b.off.map(o => o.kind === "off"
               ? `<span class="tag tag-team-marketing" style="margin:2px;">${fmtShort(o.date)} <button class="btn-text cap-off-del" data-id="${o.id}" title="Remove" style="padding:0 0 0 4px;font-size:11px;">×</button></span>`
-              : `<span class="tag tag-team-corporate" style="margin:2px;" title="${escapeHtml(o.label)}">${fmtShort(o.date)}</span>`).join("") : `<span class="res-note">None</span>`}</td>
-          <td class="num">${fmtH(b.hours)}</td></tr>`).join("")}
-          <tr><td colspan="5">Total before buffer</td><td class="num">${fmtH(gross)}</td></tr>
-          <tr><td colspan="5"><strong style="font-weight:500;">Capacity after 20% buffer</strong></td><td class="num"><strong style="font-weight:500;">${fmtH(net)}</strong></td></tr>
-          <tr><td colspan="5">Education limit (70%)</td><td class="num">${fmtH(net * 0.7)}</td></tr>
-          <tr><td colspan="5">Planning Center limit (30%)</td><td class="num">${fmtH(net * 0.3)}</td></tr>
+              : `<span class="tag tag-team-corporate" style="margin:2px;" title="${escapeHtml(o.label)}">${fmtShort(o.date)}</span>`).join("") : `<span class="res-note">${p.counts_in_capacity ? "None" : "—"}</span>`}</td>
+          <td class="num">${p.counts_in_capacity ? fmtH(b.hours) : "—"}</td>
+          <td class="num">${loggedCell(p)}</td></tr>`).join("")}
+          <tr><td colspan="6">Total before buffer</td><td class="num">${fmtH(gross)}</td><td></td></tr>
+          <tr><td colspan="6"><strong style="font-weight:500;">Capacity after 20% buffer</strong></td><td class="num"><strong style="font-weight:500;">${fmtH(net)}</strong></td><td></td></tr>
+          <tr><td colspan="6">Education limit (70%)</td><td class="num">${fmtH(net * 0.7)}</td><td></td></tr>
+          <tr><td colspan="6">Planning Center limit (30%)</td><td class="num">${fmtH(net * 0.3)}</td><td></td></tr>
         </tbody></table></div>
-        <div class="res-note" style="margin:6px 0 16px 0;">Grey dates are bank holidays, amber dates are time off.</div>`
-        : `<div class="empty-state">Nobody is marked as counted yet. Run the counted-hours update in Supabase first.</div>`}
+        <div class="res-note" style="margin:6px 0 16px 0;">Grey dates are bank holidays, amber dates are time off. "Logged so far" turns red below 80% of the hours someone was available this month, which usually means hours are missing.</div>`
+        : `<div class="empty-state">No Marketing staff found. People appear here after their first sign-in.</div>`}
 
       <div class="section-label">Add time off</div>
       <div class="inline-form" style="margin-bottom:16px;">
-        <select id="to-person" aria-label="Person">${ppl.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
+        <select id="to-person" aria-label="Person">${counted.map(p => `<option value="${p.id}">${escapeHtml(p.name || p.email || "")}</option>`).join("")}</select>
         <input type="date" id="to-from" aria-label="From" />
         <input type="date" id="to-to" aria-label="To (optional)" title="Leave empty for a single day" />
         <input type="text" id="to-note" placeholder="Note, e.g. Holiday" style="flex:1;min-width:140px;" aria-label="Note" />
@@ -2674,6 +2693,10 @@
     }));
     content().querySelectorAll(".cap-region").forEach(s => s.addEventListener("change", async () => {
       const { error } = await sb.from("profiles").update({ holiday_region: s.value || null }).eq("id", s.dataset.pid);
+      if (error) alert("Couldn't save: " + error.message); await after();
+    }));
+    content().querySelectorAll(".cap-counted").forEach(c => c.addEventListener("change", async () => {
+      const { error } = await sb.from("profiles").update({ counts_in_capacity: c.checked }).eq("id", c.dataset.pid);
       if (error) alert("Couldn't save: " + error.message); await after();
     }));
     content().querySelectorAll(".cap-off-del").forEach(b => b.addEventListener("click", async () => { await sb.from("time_off").delete().eq("id", b.dataset.id); await after(); }));
@@ -2703,6 +2726,38 @@
       const { error } = await sb.from("public_holidays").insert({ region: el("#hol-region").value, holiday_date: date, name });
       if (error) alert("Couldn't save: " + error.message);
       await after();
+    });
+  }
+
+  // ---------- directors: request work ----------
+  function openRequestModal(bu) {
+    const root = el("#modal-root");
+    root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:460px;"><h3>Request work from Marketing</h3>
+      <p class="res-note" style="margin-top:-4px;">Requests are reviewed at the next ${bu} meeting. Mark it urgent only if it can't wait until then.</p>
+      <div class="field"><label for="rq-name">What do you need?</label><input id="rq-name" type="text" placeholder="e.g. Landing page for the March immersion" /></div>
+      <div class="field"><label for="rq-details">Details</label><textarea id="rq-details" rows="4" class="res-textarea" placeholder="Goal, audience, what's included, links to briefs or files"></textarea></div>
+      <div class="field"><label for="rq-deadline">Needed by</label><input id="rq-deadline" type="date" /></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);"><input type="checkbox" id="rq-urgent" /> Urgent: can't wait for the next meeting</label>
+      <div id="rq-error" class="res-flag-over" style="font-size:12.5px;margin-top:8px;"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="rq-cancel">Cancel</button><button class="btn" id="rq-save">Send request</button></div>
+    </div></div>`;
+    el("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+    el("#rq-cancel").addEventListener("click", () => root.innerHTML = "");
+    el("#rq-save").addEventListener("click", async () => {
+      const name = el("#rq-name").value.trim();
+      if (!name) { el("#rq-error").textContent = "Add a short title for the request."; return; }
+      el("#rq-save").disabled = true;
+      const deadline = el("#rq-deadline").value || null;
+      const res = await addProject({
+        name, team: "Marketing", client: "", status: "planning", visibleToClient: false, portfolioIds: [],
+        startDate: todayIso(), endDate: deadline || todayIso(), businessUnit: bu,
+        isUnplanned: true, unplannedStatus: "logged", requestedOn: todayIso(),
+        requestedBy: me.id, requestDetails: el("#rq-details").value.trim(), requestDeadline: deadline, requestUrgent: el("#rq-urgent").checked
+      });
+      if (res && res.error) { el("#rq-error").textContent = "Couldn't send the request: " + res.error.message; el("#rq-save").disabled = false; return; }
+      root.innerHTML = "";
+      await loadProjects();
+      render();
     });
   }
 })();
