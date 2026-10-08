@@ -2627,7 +2627,8 @@
   function capacityPanelHtml() {
     const month = state.resMonth, end = monthEnd(month), today = todayIso();
     const counted = state.people.filter(p => p.counts_in_capacity);
-    const listed = state.people.filter(p => p.role === "staff" && (p.counts_in_capacity || p.team === "Marketing"))
+    const shown = (p) => p.counts_in_capacity || (p.team || "").toLowerCase().includes("marketing") || p.daily_hours != null || (state.capExtra || []).includes(p.id);
+    const listed = state.people.filter(p => p.role === "staff" && shown(p))
       .sort((a, b) => (b.counts_in_capacity - a.counts_in_capacity) || (a.name || "").localeCompare(b.name || ""));
     const rows = listed.map(p => ({ p, b: personMonthBreakdown(p, month) }));
     const gross = rows.filter(r => r.p.counts_in_capacity).reduce((s, r) => s + r.b.hours, 0), net = Math.round(gross * CAPACITY_BUFFER * 10) / 10;
@@ -2665,6 +2666,10 @@
         </tbody></table></div>
         <div class="res-note" style="margin:6px 0 16px 0;">Grey dates are bank holidays, amber dates are time off. "Logged so far" turns red below 80% of the hours someone was available this month, which usually means hours are missing.</div>`
         : `<div class="empty-state">No Marketing staff found. People appear here after their first sign-in.</div>`}
+      <div class="inline-form" style="margin-bottom:16px;">
+        <select id="cap-add-person" aria-label="Add someone to the table"><option value="">Add someone to this table…</option>${state.people.filter(p => p.role === "staff" && !shown(p)).sort((a, b) => (a.name || a.email || "").localeCompare(b.name || b.email || "")).map(p => `<option value="${p.id}">${escapeHtml(p.name || p.email || "")}</option>`).join("")}</select>
+        <span class="res-note">Anyone you add stays listed so you can tick Counted.</span>
+      </div>
 
       <div class="section-label">Add time off</div>
       <div class="inline-form" style="margin-bottom:16px;">
@@ -2695,6 +2700,8 @@
       const { error } = await sb.from("profiles").update({ holiday_region: s.value || null }).eq("id", s.dataset.pid);
       if (error) alert("Couldn't save: " + error.message); await after();
     }));
+    const addSel = el("#cap-add-person");
+    if (addSel) addSel.addEventListener("change", () => { if (!addSel.value) return; state.capExtra = (state.capExtra || []).concat(addSel.value); render(); });
     content().querySelectorAll(".cap-counted").forEach(c => c.addEventListener("change", async () => {
       const { error } = await sb.from("profiles").update({ counts_in_capacity: c.checked }).eq("id", c.dataset.pid);
       if (error) alert("Couldn't save: " + error.message); await after();
