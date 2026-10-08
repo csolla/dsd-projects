@@ -2703,6 +2703,8 @@
     const addSel = el("#cap-add-person");
     if (addSel) addSel.addEventListener("change", () => { if (!addSel.value) return; state.capExtra = (state.capExtra || []).concat(addSel.value); render(); });
     content().querySelectorAll(".cap-counted").forEach(c => c.addEventListener("change", async () => {
+      if (!state.capExtra) state.capExtra = [];
+      if (!state.capExtra.includes(c.dataset.pid)) state.capExtra.push(c.dataset.pid);
       const { error } = await sb.from("profiles").update({ counts_in_capacity: c.checked }).eq("id", c.dataset.pid);
       if (error) alert("Couldn't save: " + error.message); await after();
     }));
