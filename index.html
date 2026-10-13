@@ -548,6 +548,7 @@
       budget: p.budget, budgetSpent: p.budget_spent || 0,
       businessUnit: p.business_unit || null, plannedHours: p.planned_hours != null ? Number(p.planned_hours) : null, priority: p.priority,
       isUnplanned: !!p.is_unplanned, unplannedStatus: p.unplanned_status, requestedOn: p.requested_on, swappedFor: p.swapped_for,
+      budgetEducation: p.budget_education != null ? Number(p.budget_education) : null, budgetPc: p.budget_pc != null ? Number(p.budget_pc) : null,
       requestedBy: p.requested_by, requestDetails: p.request_details, requestDeadline: p.request_deadline, requestUrgent: !!p.request_urgent,
       portfolioIds: (pf || []).filter(r => r.project_id === p.id).map(r => r.portfolio_id),
       clientIds: (pc || []).filter(r => r.project_id === p.id).map(r => r.client_id)
@@ -559,7 +560,7 @@
     state.tasks = (tasks || []).map(t => ({
       id: t.id, title: t.title, description: t.description, status: t.status,
       assignee: t.assignee_id ? (personById(t.assignee_id) || {}).name : "",
-      assigneeId: t.assignee_id, dueDate: t.due_date, estimatedHours: t.estimated_hours,
+      assigneeId: t.assignee_id, dueDate: t.due_date, estimatedHours: t.estimated_hours, businessUnit: t.business_unit || null,
       projectIds: (tp || []).filter(r => r.task_id === t.id).map(r => r.project_id)
     }));
   }
@@ -746,7 +747,7 @@
   }
   async function updateProjectField(projectId, fields) {
     const map = { visibleToClient: "share_with_client", startDate: "start_date", endDate: "end_date", client: "client_company", budgetSpent: "budget_spent",
-      businessUnit: "business_unit", plannedHours: "planned_hours", isUnplanned: "is_unplanned", unplannedStatus: "unplanned_status", requestedOn: "requested_on", swappedFor: "swapped_for" };
+      businessUnit: "business_unit", plannedHours: "planned_hours", isUnplanned: "is_unplanned", unplannedStatus: "unplanned_status", requestedOn: "requested_on", swappedFor: "swapped_for", budgetEducation: "budget_education", budgetPc: "budget_pc" };
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
     await sb.from("projects").update(payload).eq("id", projectId);
@@ -799,7 +800,7 @@
     const { data: row } = await sb.from("tasks").insert({
       title: data.title, description: data.description || "", status: data.status || "todo",
       assignee_id: data.assignee ? personIdByName(data.assignee) : null,
-      due_date: data.dueDate || null, estimated_hours: data.estimatedHours || 0
+      due_date: data.dueDate || null, estimated_hours: data.estimatedHours || 0, business_unit: data.businessUnit || null
     }).select().single();
     if (!row) return;
     await sb.from("task_projects").insert(data.projectIds.map(pid => ({ task_id: row.id, project_id: pid })));
@@ -807,7 +808,7 @@
     if (data.assignee) createNotification(data.assignee, "assigned", { id: row.id, title: data.title, projectIds: data.projectIds }, projectById(data.projectIds[0]));
   }
   async function updateTaskField(taskId, fields) {
-    const map = { dueDate: "due_date", estimatedHours: "estimated_hours", assigneeId: "assignee_id" };
+    const map = { dueDate: "due_date", estimatedHours: "estimated_hours", assigneeId: "assignee_id", businessUnit: "business_unit" };
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
     await sb.from("tasks").update(payload).eq("id", taskId);
@@ -1206,13 +1207,14 @@
           <button class="btn-text" id="open-project-settings">⚙ Project settings</button>
         </div>
       </div>
+      ${project.businessUnit === "Shared" ? sharedCampaignPanel(project) : ""}
       <div class="board-cols">
         ${TASK_COLS.map(col => {
           const colTasks = tasks.filter(t => t.status === col.key);
           return `<div class="board-col" data-status="${col.key}"><h4>${col.label}<span>${colTasks.length}</span></h4>
             ${colTasks.map(t => `
               <div class="task-card" draggable="true" data-task-id="${t.id}">
-                <div class="task-title">${escapeHtml(t.title)}</div>
+                <div class="task-title">${escapeHtml(t.title)}</div>${project.businessUnit === "Shared" && t.businessUnit ? `<div style="margin:4px 0;">${buTagHtml(t.businessUnit)}</div>` : ""}
                 <div class="task-meta">
                   <span class="identity-dot" style="width:16px;height:16px;font-size:8px;background:${colorForName(t.assignee)}">${t.assignee ? initials(t.assignee) : '?'}</span>
                   <select class="task-reassign-select" data-id="${t.id}" style="flex:1;">
@@ -1532,6 +1534,7 @@
             <select id="td-add-project" style="max-width:220px;"><option value="" selected disabled>+ Add to another project</option>${state.projects.filter(p => !task.projectIds.includes(p.id)).map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
           </div></div>
           <div class="field-table-row"><span class="ft-label">Est. hours</span><input type="number" id="td-hours" min="0" value="${task.estimatedHours || 0}" /></div>
+          <div class="field-table-row"><span class="ft-label">Business unit</span><select id="td-bu"><option value="">From project</option>${["Education", "Planning Center", "Shared", "Delight", "Corporate"].map(b => `<option value="${b}" ${b === task.businessUnit ? "selected" : ""}>${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
           <div class="field-table-row" style="align-items:flex-start;"><span class="ft-label" style="padding-top:6px;">Dependencies</span><div>
             <div id="td-deps-list" class="chip-row"></div>
             <select id="td-add-dep" style="max-width:220px;"><option value="" selected disabled>+ Add dependency</option>${state.tasks.filter(t => t.id !== taskId).map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("")}</select>
@@ -1582,6 +1585,13 @@
     el("#td-due").addEventListener("change", (e) => setDueDate(taskId, e.target.value));
     el("#td-status").addEventListener("change", async (e) => { await updateTaskStatus(taskId, e.target.value); closeTaskDetail(); openTaskDetail(taskId); });
     el("#td-hours").addEventListener("change", (e) => setEstimatedHours(taskId, Number(e.target.value) || 0));
+    el("#td-bu").addEventListener("change", async (e) => {
+      const v = e.target.value || null;
+      await updateTaskField(taskId, { businessUnit: v });
+      const t = state.tasks.find(t => t.id === taskId); if (t) t.businessUnit = v;
+      await logActivity(taskId, v ? "tagged this task " + v : "cleared the business unit tag");
+      renderTaskTime(taskId);
+    });
     el("#td-add-dep").addEventListener("change", (e) => { if (e.target.value) addDependency(taskId, e.target.value); });
     el("#td-file-input").addEventListener("change", (e) => {
       const file = e.target.files[0];
@@ -1730,6 +1740,7 @@
       <div class="field"><label>Due date</label><input id="nt-due" type="date" /></div>
       <div class="field"><label>Status</label><select id="nt-status">${TASK_COLS.map(c => `<option value="${c.key}">${c.label}</option>`).join("")}</select></div>
       <div class="field"><label>Est. hours</label><input id="nt-hours" type="number" min="0" /></div>
+      <div class="field"><label>Business unit</label><select id="nt-bu"><option value="">From project</option>${["Education", "Planning Center", "Shared", "Delight", "Corporate"].map(b => `<option value="${b}">${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
       <div class="field"><label>Description (optional)</label><textarea id="nt-desc" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea></div>
       <div class="modal-actions"><button class="btn-ghost" id="nt-cancel">Cancel</button><button class="btn" id="nt-save">Create task</button></div>
     </div></div>`;
@@ -1741,7 +1752,7 @@
       addTask({
         projectIds: [projectId], title, assignee: el("#nt-assignee").value, status: el("#nt-status").value,
         dueDate: el("#nt-due").value || "", estimatedHours: Number(el("#nt-hours").value) || 0,
-        description: el("#nt-desc").value.trim()
+        description: el("#nt-desc").value.trim(), businessUnit: el("#nt-bu").value || null
       });
       root.innerHTML = "";
     });
@@ -1769,7 +1780,9 @@
       <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-budget" style="width:100%;">Save budget</button></div>
 
       <div class="section-label">Resourcing</div>
-      <div class="field"><label>Business unit served</label><select id="ps-bu"><option value="">Not a business unit campaign</option>${BUS.map(b => `<option ${b===project.businessUnit?'selected':''}>${b}</option>`).join("")}</select></div>
+      <div class="field"><label>Business unit served</label><select id="ps-bu"><option value="">Not a business unit campaign</option>${BUS.map(b => `<option ${b===project.businessUnit?'selected':''}>${b}</option>`).join("")}<option value="Shared" ${project.businessUnit==='Shared'?'selected':''}>Shared: Education + Planning Center</option></select></div>
+      <div class="field"><label>Education budget (hours, shared campaigns)</label><input id="ps-budget-edu" type="number" min="0" value="${project.budgetEducation != null ? project.budgetEducation : ''}" /></div>
+      <div class="field"><label>Planning Center budget (hours, shared campaigns)</label><input id="ps-budget-pc" type="number" min="0" value="${project.budgetPc != null ? project.budgetPc : ''}" /></div>
       <div class="field"><label>Planned hours</label><input id="ps-planned" type="number" min="0" value="${project.plannedHours != null ? project.plannedHours : ''}" /></div>
       <div class="field"><label>Priority (1 is highest)</label><input id="ps-priority" type="number" min="1" value="${project.priority != null ? project.priority : ''}" /></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" id="ps-unplanned" ${project.isUnplanned ? 'checked' : ''} /> Unplanned request</label>
@@ -1804,6 +1817,8 @@
       const unplanned = el("#ps-unplanned").checked;
       updateProjectField(projectId, {
         businessUnit: el("#ps-bu").value || null,
+        budgetEducation: el("#ps-budget-edu").value === "" ? null : Number(el("#ps-budget-edu").value),
+        budgetPc: el("#ps-budget-pc").value === "" ? null : Number(el("#ps-budget-pc").value),
         plannedHours: el("#ps-planned").value === "" ? null : Number(el("#ps-planned").value),
         priority: el("#ps-priority").value === "" ? null : Number(el("#ps-priority").value),
         isUnplanned: unplanned,
@@ -1857,7 +1872,7 @@
     root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New project</h3>
       <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
       <div class="field"><label>Team</label><select id="mp-team">${TEAMS.map(t => `<option>${t}</option>`).join("")}</select></div>
-      <div class="field"><label>Business unit served (Marketing campaigns)</label><select id="mp-bu"><option value="">None</option>${BUS.map(b => `<option>${b}</option>`).join("")}</select></div>
+      <div class="field"><label>Business unit served (Marketing campaigns)</label><select id="mp-bu"><option value="">None</option>${BUS.map(b => `<option>${b}</option>`).join("")}<option value="Shared">Shared: Education + Planning Center</option></select></div>
       <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
       <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
       <div class="field"><label>Status</label><select id="mp-status">${STATUSES.map(s => `<option>${s}</option>`).join("")}</select></div>
@@ -2023,15 +2038,58 @@
     return data;
   }
 
+  // ---------- logging (with 70/30 split for shared work) ----------
+  const SHARED_SPLIT = { "Education": 0.7, "Planning Center": 0.3 };
+  async function logTime({ date, hours, bu, projectId, taskId, notes }) {
+    const base = { entry_date: date, project_id: projectId || null, task_id: taskId || null, notes: notes || null };
+    if (bu !== "Shared") return addTimeEntry({ ...base, hours, business_unit: bu });
+    const edu = Math.round(hours * SHARED_SPLIT["Education"] * 100) / 100;
+    const pc = Math.round((hours - edu) * 100) / 100;
+    const group = (crypto.randomUUID && crypto.randomUUID()) || ("10000000-1000-4000-8000-100000000000".replace(/[018]/g, c => (c ^ Math.random() * 16 >> c / 4).toString(16)));
+    const rows = [{ ...base, hours: edu, business_unit: "Education" }, { ...base, hours: pc, business_unit: "Planning Center" }]
+      .filter(r => r.hours > 0).map(r => ({ ...r, split_group: group, person_id: me.id, created_by: me.id, source: "tool" }));
+    const { error } = await sb.from("time_entries").insert(rows);
+    if (error) { alert("Couldn't log that time: " + error.message); return false; }
+    await loadTimeEntries();
+    return true;
+  }
+  // Show the two halves of a shared entry as one row
+  function groupEntries(list) {
+    const out = [], seen = {};
+    list.forEach(e => {
+      if (!e.split_group) { out.push({ ...e, ids: [e.id], shared: false }); return; }
+      if (seen[e.split_group]) { seen[e.split_group].hours = Number(seen[e.split_group].hours) + Number(e.hours); return; }
+      const g = { ...e, hours: Number(e.hours), ids: [e.id], shared: true, business_unit: "Shared" };
+      seen[e.split_group] = g; out.push(g);
+    });
+    return out;
+  }
+  async function deleteEntryRow(row) {
+    if (row.shared) await sb.from("time_entries").delete().eq("split_group", row.split_group);
+    else await sb.from("time_entries").delete().eq("id", row.id);
+    await loadTimeEntries();
+  }
+  const buTagHtml = (bu) => bu === "Shared" ? `<span class="tag tag-team-marketing">Shared 70/30</span>` : `<span class="tag ${BU_TAG[bu] || ""}">${bu}</span>`;
+  // Which unit a task's time goes to, or null if the person must choose
+  function taskBu(task) {
+    if (task && task.businessUnit) return task.businessUnit;
+    const proj = task && task.projectIds.map(id => state.projects.find(p => p.id === id)).find(p => p && p.businessUnit);
+    return proj && proj.businessUnit !== "Shared" ? proj.businessUnit : null;
+  }
+  function buOptions(isShared, selected) {
+    const opts = isShared ? ["Education", "Planning Center", "Shared", "Corporate"] : BUS;
+    return opts.map(b => `<option value="${b}" ${b === selected ? "selected" : ""}>${b === "Shared" ? "Shared (split 70/30)" : b}</option>`).join("");
+  }
+
   // =========================================================
   // MY TIME view
   // =========================================================
   function projectOptions(selectedId) {
     const withBu = state.projects.filter(p => p.businessUnit && p.unplannedStatus !== "declined")
       .sort((a, b) => (a.businessUnit + a.name).localeCompare(b.businessUnit + b.name));
-    return `<option value="">No project</option>` + BUS.map(bu => {
+    return `<option value="">No project</option>` + BUS.concat(["Shared"]).map(bu => {
       const list = withBu.filter(p => p.businessUnit === bu);
-      return list.length ? `<optgroup label="${bu}">${list.map(p => `<option value="${p.id}" ${p.id === selectedId ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</optgroup>` : "";
+      return list.length ? `<optgroup label="${bu === "Shared" ? "Shared campaigns" : bu}">${list.map(p => `<option value="${p.id}" ${p.id === selectedId ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</optgroup>` : "";
     }).join("");
   }
 
@@ -2047,11 +2105,12 @@
     wrap.querySelector("#tw-next").addEventListener("click", () => { state.timeWeek = addDays(week, 7); render(); });
     wrap.querySelector("#tw-today").addEventListener("click", () => { state.timeWeek = mondayOf(todayIso()); render(); });
 
-    const mine = state.timeEntries.filter(e => e.person_id === me.id && e.entry_date >= week && e.entry_date <= weekEnd)
+    const raw = state.timeEntries.filter(e => e.person_id === me.id && e.entry_date >= week && e.entry_date <= weekEnd)
       .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at));
+    const mine = groupEntries(raw);
     const byBu = {};
-    mine.forEach(e => { byBu[e.business_unit] = (byBu[e.business_unit] || 0) + Number(e.hours); });
-    const total = mine.reduce((s, e) => s + Number(e.hours), 0);
+    raw.forEach(e => { byBu[e.business_unit] = (byBu[e.business_unit] || 0) + Number(e.hours); });
+    const total = raw.reduce((s, e) => s + Number(e.hours), 0);
     const defaultDate = todayIso() >= week && todayIso() <= weekEnd ? todayIso() : week;
 
     content().innerHTML = `
@@ -2062,45 +2121,57 @@
             <input type="date" id="lt-date" value="${defaultDate}" aria-label="Date" />
             <select id="lt-project" aria-label="Project" style="min-width:220px;">${projectOptions("")}</select>
             <select id="lt-task" aria-label="Task" style="min-width:180px;"><option value="">No specific task</option></select>
-            <select id="lt-bu" aria-label="Business unit">${BUS.map(b => `<option>${b}</option>`).join("")}</select>
+            <select id="lt-bu" aria-label="Business unit">${buOptions(false, "Education")}</select>
             <input type="number" id="lt-hours" min="0.25" max="24" step="0.25" placeholder="Hours" style="width:90px;" aria-label="Hours" />
             <input type="text" id="lt-notes" placeholder="Notes (optional)" style="flex:1;min-width:160px;" aria-label="Notes" />
             <button class="btn" id="lt-save">Log time</button>
           </div>
-          <div class="res-note" style="margin-top:8px;">Hours are decimal: 1.5 is an hour and a half. The business unit follows the project you pick.</div>
+          <div class="res-note" style="margin-top:8px;" id="lt-hint">Hours are decimal: 1.5 is an hour and a half. The business unit follows the project or task you pick.</div>
         </div>
         <div class="panel">
           <h3>This week: ${fmtH(total)}</h3>
           ${Object.keys(byBu).length ? `<div class="chip-row" style="margin-bottom:12px;">${BUS.filter(b => byBu[b]).map(b => `<span class="tag ${BU_TAG[b]}">${b} ${fmtH(byBu[b])}</span>`).join(" ")}</div>` : ""}
           ${mine.length ? `<div class="table-scroll"><table class="res-table">
             <thead><tr><th>Day</th><th>Work</th><th>Business unit</th><th class="num">Hours</th><th>Notes</th><th></th></tr></thead>
-            <tbody>${mine.map(e => `<tr>
+            <tbody>${mine.map((e, i) => `<tr>
               <td>${fmtShort(e.entry_date)}</td><td>${escapeHtml(entryLabel(e))}</td>
-              <td><span class="tag ${BU_TAG[e.business_unit]}">${e.business_unit}</span></td>
+              <td>${buTagHtml(e.business_unit)}</td>
               <td class="num">${fmtH(e.hours)}</td><td class="res-note">${escapeHtml(e.notes || "")}</td>
-              <td><button class="btn-text" data-del="${e.id}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+              <td><button class="btn-text" data-row="${i}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
             : `<div class="empty-state">Nothing logged this week yet. Add your first entry above.</div>`}
         </div>
       </div>`;
 
     const projSel = el("#lt-project"), taskSel = el("#lt-task"), buSel = el("#lt-bu");
+    const syncTask = () => {
+      const p = state.projects.find(p => p.id === projSel.value);
+      const t = state.tasks.find(t => t.id === taskSel.value);
+      const isShared = !!p && p.businessUnit === "Shared";
+      const fixed = t ? taskBu(t) : (p && !isShared ? p.businessUnit : null);
+      buSel.innerHTML = buOptions(isShared, fixed || (isShared ? "Shared" : buSel.value));
+      buSel.disabled = !!fixed;
+      el("#lt-hint").textContent = isShared && !fixed
+        ? "This is a shared campaign. Pick the unit the work was for, or Shared if it served both (split 70/30 automatically)."
+        : "Hours are decimal: 1.5 is an hour and a half. The business unit follows the project or task you pick.";
+    };
     const syncProject = () => {
       const p = state.projects.find(p => p.id === projSel.value);
       const tasks = p ? state.tasks.filter(t => t.projectIds.includes(p.id)) : [];
-      taskSel.innerHTML = `<option value="">No specific task</option>` + tasks.map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("");
+      taskSel.innerHTML = `<option value="">No specific task</option>` + tasks.map(t => `<option value="${t.id}">${escapeHtml(t.title)}${t.businessUnit && p.businessUnit === "Shared" ? ` (${t.businessUnit})` : ""}</option>`).join("");
       taskSel.disabled = !p;
-      if (p && p.businessUnit) { buSel.value = p.businessUnit; buSel.disabled = true; } else buSel.disabled = false;
+      syncTask();
     };
     projSel.addEventListener("change", syncProject);
+    taskSel.addEventListener("change", syncTask);
     syncProject();
     el("#lt-save").addEventListener("click", async () => {
       const hours = Number(el("#lt-hours").value);
       const date = el("#lt-date").value;
       if (!date || !(hours > 0 && hours <= 24)) { alert("Add a date and between 0 and 24 hours."); return; }
-      const ok = await addTimeEntry({ entry_date: date, hours, business_unit: buSel.value, project_id: projSel.value || null, task_id: taskSel.value || null, notes: el("#lt-notes").value.trim() || null });
+      const ok = await logTime({ date, hours, bu: buSel.value, projectId: projSel.value, taskId: taskSel.value, notes: el("#lt-notes").value.trim() });
       if (ok) render();
     });
-    content().querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteTimeEntry(b.dataset.del); render(); } }));
+    content().querySelectorAll("[data-row]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteEntryRow(mine[Number(b.dataset.row)]); render(); } }));
   }
 
   // Time section inside the task panel
@@ -2108,34 +2179,61 @@
     const box = el("#td-time");
     if (!box) return;
     const task = state.tasks.find(t => t.id === taskId);
-    const proj = task && task.projectIds.map(id => state.projects.find(p => p.id === id)).find(p => p && p.businessUnit);
-    const entries = state.timeEntries.filter(e => e.task_id === taskId).sort((a, b) => b.entry_date.localeCompare(a.entry_date));
-    const total = entries.reduce((s, e) => s + Number(e.hours), 0);
+    if (!task) return;
+    const proj = task.projectIds.map(id => state.projects.find(p => p.id === id)).find(p => p && p.businessUnit);
+    const isShared = !!proj && proj.businessUnit === "Shared";
+    const fixed = taskBu(task);
+    const rows = groupEntries(state.timeEntries.filter(e => e.task_id === taskId).sort((a, b) => b.entry_date.localeCompare(a.entry_date)));
+    const total = rows.reduce((s, e) => s + Number(e.hours), 0);
     box.innerHTML = `
-      <div class="section-label"><span>Time logged</span><span>${fmtH(total)}${task && task.estimatedHours ? ` of ${fmtH(task.estimatedHours)} estimated` : ""}</span></div>
-      <div id="td-time-list">${entries.map(e => {
+      <div class="section-label"><span>Time logged</span><span>${fmtH(total)}${task.estimatedHours ? ` of ${fmtH(task.estimatedHours)} estimated` : ""}</span></div>
+      <div id="td-time-list">${rows.map((e, i) => {
         const who = (personById(e.person_id) || {}).name || "Someone";
         const mineOrAdmin = e.person_id === me.id || me.isAdmin;
-        return `<div class="list-row"><span>${escapeHtml(who)}, ${fmtShort(e.entry_date)}${e.notes ? ` <span class="res-note">${escapeHtml(e.notes)}</span>` : ""}</span><span>${fmtH(e.hours)}${mineOrAdmin ? ` <button class="btn-text" data-tdel="${e.id}">Remove</button>` : ""}</span></div>`;
+        return `<div class="list-row"><span>${escapeHtml(who)}, ${fmtShort(e.entry_date)}${e.shared ? " · shared" : ""}${e.notes ? ` <span class="res-note">${escapeHtml(e.notes)}</span>` : ""}</span><span>${fmtH(e.hours)}${mineOrAdmin ? ` <button class="btn-text" data-trow="${i}">Remove</button>` : ""}</span></div>`;
       }).join("")}</div>
       <div class="inline-form" style="margin:8px 0 20px 0;">
         <input type="date" id="tt-date" value="${todayIso()}" aria-label="Date" />
         <input type="number" id="tt-hours" min="0.25" max="24" step="0.25" placeholder="Hours" style="width:80px;" aria-label="Hours" />
-        ${proj ? "" : `<select id="tt-bu" aria-label="Business unit">${BUS.map(b => `<option>${b}</option>`).join("")}</select>`}
+        ${fixed ? "" : `<select id="tt-bu" aria-label="Business unit">${buOptions(isShared, isShared ? "Shared" : "Education")}</select>`}
         <input type="text" id="tt-notes" placeholder="Notes (optional)" style="flex:1;min-width:120px;" aria-label="Notes" />
         <button class="btn-ghost" id="tt-save">Log time</button>
       </div>
-      ${proj ? "" : `<div class="res-note" style="margin:-14px 0 20px 0;">This task's project has no business unit yet, so pick one.</div>`}`;
-    box.querySelectorAll("[data-tdel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteTimeEntry(b.dataset.tdel); renderTaskTime(taskId); } }));
+      ${fixed ? "" : `<div class="res-note" style="margin:-14px 0 20px 0;">${isShared ? "Tag this task's business unit above so you don't have to choose each time." : "This task's project has no business unit yet, so pick one."}</div>`}`;
+    box.querySelectorAll("[data-trow]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteEntryRow(rows[Number(b.dataset.trow)]); renderTaskTime(taskId); } }));
     el("#tt-save").addEventListener("click", async () => {
       const hours = Number(el("#tt-hours").value), date = el("#tt-date").value;
       if (!date || !(hours > 0 && hours <= 24)) { alert("Add a date and between 0 and 24 hours."); return; }
-      const ok = await addTimeEntry({
-        entry_date: date, hours, task_id: taskId, project_id: proj ? proj.id : (task.projectIds[0] || null),
-        business_unit: proj ? proj.businessUnit : el("#tt-bu").value, notes: el("#tt-notes").value.trim() || null
-      });
+      const ok = await logTime({ date, hours, bu: fixed || el("#tt-bu").value, projectId: proj ? proj.id : (task.projectIds[0] || null), taskId, notes: el("#tt-notes").value.trim() });
       if (ok) renderTaskTime(taskId);
     });
+  }
+
+  // Hours summary for a shared campaign (admin: both units; director: their own)
+  function sharedCampaignPanel(project) {
+    if (!(me.isAdmin || me.resBu)) return "";
+    const counted = countedIds();
+    const entries = state.timeEntries.filter(e => e.project_id === project.id && counted.has(e.person_id));
+    const units = me.isAdmin ? ["Education", "Planning Center"] : [me.resBu];
+    const row = (bu) => {
+      const mineE = entries.filter(e => buMembers(bu).includes(e.business_unit));
+      const own = mineE.filter(e => !e.split_group).reduce((s, e) => s + Number(e.hours), 0);
+      const shared = mineE.filter(e => e.split_group).reduce((s, e) => s + Number(e.hours), 0);
+      const budget = bu === "Education" ? project.budgetEducation : project.budgetPc;
+      const spent = own + shared;
+      const left = budget != null ? budget - spent : null;
+      return `<tr><td><span class="tag ${BU_TAG[bu]}">${bu}</span></td><td class="num">${budget != null ? fmtH(budget) : "Not set"}</td><td class="num">${fmtH(own)}</td><td class="num">${fmtH(shared)}</td><td class="num"><strong style="font-weight:500;">${fmtH(spent)}</strong></td><td class="num ${left != null && left < 0 ? "res-flag-over" : ""}">${left == null ? "—" : left < 0 ? fmtH(-left) + " over" : fmtH(left) + " left"}</td></tr>`;
+    };
+    const all = entries.reduce((s, e) => s + Number(e.hours), 0);
+    const sharedAll = entries.filter(e => e.split_group).reduce((s, e) => s + Number(e.hours), 0);
+    const sharedPct = all ? sharedAll / all : 0;
+    return `<div class="panel" style="margin:14px 0;">
+      <h3>Campaign hours: available vs spent</h3>
+      <div class="table-scroll"><table class="res-table">
+        <thead><tr><th>Unit</th><th class="num">Budget</th><th class="num">Own tasks</th><th class="num">Share of shared work</th><th class="num">Total spent</th><th class="num">Balance</th></tr></thead>
+        <tbody>${units.map(row).join("")}</tbody></table></div>
+      <div class="res-note" style="margin-top:8px;">Shared work is split 70% Education, 30% Planning Center.${me.isAdmin && all ? ` Shared work is ${pct(sharedPct)} of this campaign's hours${sharedPct > 0.3 ? ", <span class=\"res-flag-over\">above 30%: consider splitting shared tasks into unit-specific ones</span>" : ""}.` : ""}</div>
+    </div>`;
   }
 
   // =========================================================
@@ -2169,7 +2267,8 @@
     const members = buMembers(bu);
     const entriesBu = state.timeEntries.filter(e => counted.has(e.person_id) && members.includes(e.business_unit));
     const inPeriod = (e) => e.entry_date >= per.start && e.entry_date <= per.end;
-    const campaigns = state.projects.filter(p => members.includes(p.businessUnit) && p.unplannedStatus !== "declined")
+    const planOf = (p) => p.businessUnit === "Shared" ? (bu === "Education" ? p.budgetEducation : p.budgetPc) : p.plannedHours;
+    const campaigns = state.projects.filter(p => (members.includes(p.businessUnit) || p.businessUnit === "Shared") && p.unplannedStatus !== "declined")
       .sort((a, b) => (a.priority || 999) - (b.priority || 999) || a.name.localeCompare(b.name));
     const hoursOf = (pid, onlyPeriod) => entriesBu.filter(e => e.project_id === pid && (!onlyPeriod || inPeriod(e))).reduce((s, e) => s + Number(e.hours), 0);
 
@@ -2196,12 +2295,13 @@
 
     const campaignRows = campaigns.map(p => {
       const period = hoursOf(p.id, true), all = hoursOf(p.id, false);
-      const used = p.plannedHours ? all / p.plannedHours : null;
+      const plan = planOf(p);
+      const used = plan ? all / plan : null;
       return `<tr>
         <td>${admin ? `<input type="number" min="1" class="res-prio" data-pid="${p.id}" value="${p.priority || ""}" aria-label="Priority" style="width:52px;" />` : (p.priority || "")}</td>
-        <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.isUnplanned ? ` <span class="tag tag-team-marketing">Unplanned</span>` : ""}${p.businessUnit === "Delight" ? ` <span class="tag tag-team-delight">Delight</span>` : ""}</td>
+        <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.isUnplanned ? ` <span class="tag tag-team-marketing">Unplanned</span>` : ""}${p.businessUnit === "Delight" ? ` <span class="tag tag-team-delight">Delight</span>` : ""}${p.businessUnit === "Shared" ? ` <span class="tag tag-team-marketing">Shared</span>` : ""}</td>
         <td><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span></td>
-        <td class="num">${admin ? `<input type="number" min="0" step="1" class="res-plan" data-pid="${p.id}" value="${p.plannedHours != null ? p.plannedHours : ""}" aria-label="Planned hours" />` : (p.plannedHours != null ? fmtH(p.plannedHours) : "Not set")}</td>
+        <td class="num">${admin ? `<input type="number" min="0" step="1" class="res-plan" data-pid="${p.id}" value="${plan != null ? plan : ""}" data-shared="${p.businessUnit === "Shared" ? "1" : ""}" aria-label="Planned hours" />` : (plan != null ? fmtH(plan) : "Not set")}</td>
         <td class="num">${fmtH(period)}</td>
         <td class="num">${fmtH(all)}</td>
         <td class="num ${used != null && used > 1 ? "res-flag-over" : ""}">${used == null ? "No plan" : pct(used)}</td>
@@ -2253,7 +2353,7 @@
           <h3>4. Next period pipeline <span class="res-note">10 min</span></h3>
           ${pipeline.length ? `<div class="table-scroll"><table class="res-table">
             <thead><tr><th>Campaign</th><th>Dates</th><th class="num">Planned hours left</th></tr></thead>
-            <tbody>${pipeline.map(p => `<tr><td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a></td><td>${fmtShort(p.startDate)} to ${fmtShort(p.endDate)}</td><td class="num">${p.plannedHours != null ? fmtH(Math.max(0, p.plannedHours - hoursOf(p.id, false))) : "No plan"}</td></tr>`).join("")}</tbody></table></div>
+            <tbody>${pipeline.map(p => `<tr><td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a></td><td>${fmtShort(p.startDate)} to ${fmtShort(p.endDate)}</td><td class="num">${planOf(p) != null ? fmtH(Math.max(0, planOf(p) - hoursOf(p.id, false))) : "No plan"}</td></tr>`).join("")}</tbody></table></div>
             <div class="res-note" id="res-capacity" style="margin-top:10px;"></div>`
             : `<div class="empty-state">Nothing scheduled for ${fmtShort(per.nextStart)} to ${fmtShort(per.nextEnd)}.</div>`}
         </div>
@@ -2322,7 +2422,10 @@
     if (!admin) {
       return;
     }
-    content().querySelectorAll(".res-plan").forEach(inp => inp.addEventListener("change", () => updateProjectField(inp.dataset.pid, { plannedHours: inp.value === "" ? null : Number(inp.value) })));
+    content().querySelectorAll(".res-plan").forEach(inp => inp.addEventListener("change", () => {
+      const v = inp.value === "" ? null : Number(inp.value);
+      updateProjectField(inp.dataset.pid, inp.dataset.shared ? (bu === "Education" ? { budgetEducation: v } : { budgetPc: v }) : { plannedHours: v });
+    }));
     content().querySelectorAll(".res-prio").forEach(inp => inp.addEventListener("change", () => updateProjectField(inp.dataset.pid, { priority: inp.value === "" ? null : Number(inp.value) })));
     content().querySelectorAll(".res-ustatus").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { unplannedStatus: s.value, ...(s.value !== "urgent_swap" ? { swappedFor: null } : {}) })));
     content().querySelectorAll(".res-swap").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { swappedFor: s.value || null })));
