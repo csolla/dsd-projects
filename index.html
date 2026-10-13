@@ -263,7 +263,7 @@
   <div class="auth-card">
     <svg class="auth-mark" viewBox="0 0 26 26" fill="none"><path d="M3 15 C 8 6, 18 6, 23 15" stroke="var(--teal)" stroke-width="2.4" stroke-linecap="round"/></svg>
     <h1>DSD Projects</h1>
-    <p>Sign in with your email — staff and clients both use this.</p>
+    <p>Sign in with your DSD email.</p>
     <input id="auth-email" type="email" placeholder="you@digitalsmiledesign.com" />
     <button class="btn" id="auth-send" style="width:100%;">Send magic link</button>
     <div class="auth-status" id="auth-status"></div>
@@ -312,7 +312,6 @@
       <button class="nav-item" data-view="team"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="2.6"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6M12 16c.2-2 1.6-3.4 3.3-3.4 2 0 3.7 1.6 4.2 3.7"/></svg>Team</button>
       <button class="nav-item" data-view="time"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.6 1.8"/></svg>My time</button>
       <button class="nav-item" data-view="resourcing" id="nav-resourcing" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 16h14"/><rect x="4" y="9" width="3" height="5" rx="0.8"/><rect x="8.5" y="5" width="3" height="9" rx="0.8"/><rect x="13" y="11" width="3" height="3" rx="0.8"/></svg>Resourcing</button>
-      <button class="nav-item" data-view="client"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="7" r="3"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/></svg>Client projects</button>
     </nav>
     <div class="sidebar-foot">
       <div class="notif-row" id="notif-row">
@@ -501,35 +500,10 @@
   // =========================================================
   async function bootClient() {
     el("#client-root").hidden = false;
-    el("#client-identity-name").textContent = me.name;
-    el("#client-identity-dot").textContent = initials(me.name);
-    el("#client-identity-dot").style.background = colorForName(me.name);
-
-    async function loadAndRenderClientProjects() {
-      const { data: projects } = await sb.from("projects").select("*").order("start_date");
-      const { data: progress } = await sb.from("project_progress").select("*");
-      const progMap = {};
-      (progress || []).forEach(r => progMap[r.project_id] = r.progress_percent);
-      const wrap = el("#client-content");
-      if (!projects || !projects.length) {
-        wrap.innerHTML = `<div class="empty-state">No projects have been shared with you yet.</div>`;
-        return;
-      }
-      wrap.innerHTML = `<div class="projects-grid">${projects.map(p => `
-        <div class="project-card static">
-          <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div></div></div>
-          <div class="progress-bar"><div class="progress-fill" style="width:${progMap[p.id]||0}%"></div></div>
-          <div class="project-meta">
-            <span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span>
-            <span>${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}</span>
-          </div>
-        </div>`).join("")}</div>`;
-    }
-    loadAndRenderClientProjects();
-    channels.clientProjects = sb.channel("client-projects")
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, loadAndRenderClientProjects)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, loadAndRenderClientProjects)
-      .subscribe();
+    el("#client-identity-name").textContent = me.name || me.email;
+    el("#client-identity-dot").textContent = initials(me.name || me.email || "?");
+    el("#client-identity-dot").style.background = colorForName(me.name || me.email || "?");
+    el("#client-content").innerHTML = `<div class="empty-state">This tool is only available to DSD staff. Sign in with your @digitalsmiledesign.com email.</div>`;
   }
 
   // =========================================================
@@ -805,6 +779,17 @@
   async function addDependency(taskId, dependsOnId) { await sb.from("task_dependencies").insert({ task_id: taskId, depends_on_task_id: dependsOnId }); }
   async function removeDependency(taskId, dependsOnId) { await sb.from("task_dependencies").delete().eq("task_id", taskId).eq("depends_on_task_id", dependsOnId); }
   async function addPortfolio(data) { await sb.from("portfolios").insert({ name: data.name }); }
+  async function deletePortfolio(portfolioId) {
+    const f = state.portfolios.find(f => f.id === portfolioId);
+    if (!f || !confirm(`Delete the portfolio "${f.name}"?\n\nIts projects are not deleted, they just stop being grouped in it.`)) return false;
+    await sb.from("project_portfolios").delete().eq("portfolio_id", portfolioId);
+    const { error } = await sb.from("portfolios").delete().eq("id", portfolioId);
+    if (error) { alert("Couldn't delete the portfolio: " + error.message); return false; }
+    state.portfolios = state.portfolios.filter(x => x.id !== portfolioId);
+    state.projects.forEach(p => { p.portfolioIds = (p.portfolioIds || []).filter(id => id !== portfolioId); });
+    if (state.selectedPortfolioId === portfolioId) state.selectedPortfolioId = null;
+    return true;
+  }
   async function addProjectToPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").insert({ project_id: projectId, portfolio_id: portfolioId }); }
   async function removeProjectFromPortfolio(projectId, portfolioId) { await sb.from("project_portfolios").delete().eq("project_id", projectId).eq("portfolio_id", portfolioId); }
   async function addClientToProject(projectId, clientId) { await sb.from("project_clients").insert({ project_id: projectId, client_id: clientId }); }
@@ -1179,7 +1164,7 @@
         return `
         <div class="project-card" data-id="${p.id}">
           <div class="project-card-top">
-            <div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div>
+            <div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div>
             <span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span>
           </div>
           <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
@@ -1209,7 +1194,7 @@
     const project = state.projects.find(p => p.id === id);
     if (!project) { setView("projects"); return; }
     el("#page-title").textContent = project.name;
-    el("#page-sub").textContent = `${project.team}${project.client ? " · " + project.client : ""}`;
+    el("#page-sub").textContent = project.team || "";
     el("#team-filter-wrap").style.display = "none";
     const tasks = state.tasks.filter(t => t.projectIds.includes(id));
 
@@ -1282,12 +1267,13 @@
         const members = state.projects.filter(p => p.portfolioIds.includes(f.id));
         const teams = Array.from(new Set(members.map(p => p.team)));
         return `<div class="project-card" data-id="${f.id}">
-          <div class="project-card-top"><div><div class="project-name">${escapeHtml(f.name)}</div><div class="project-client">${members.length} project${members.length === 1 ? "" : "s"}</div></div></div>
+          <div class="project-card-top"><div><div class="project-name">${escapeHtml(f.name)}</div><div class="project-client">${members.length} project${members.length === 1 ? "" : "s"}</div></div><button class="btn-text delete-portfolio-btn" data-fid="${f.id}" style="font-size:11px;">Delete</button></div>
           <div class="chip-row" style="margin-top:8px;">${teams.length ? teams.map(t => `<span class="tag ${TEAM_CLASS[t] || ''}">${t}</span>`).join("") : `<span style="font-size:11.5px;color:var(--ink-faint);">No projects yet</span>`}</div>
         </div>`;
       }).join("") : `<div class="empty-state">No portfolios yet — group related projects together with "New portfolio."</div>`}
     </div>`;
-    content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", () => { state.selectedPortfolioId = card.dataset.id; render(); }));
+    content().querySelectorAll(".delete-portfolio-btn").forEach(btn => btn.addEventListener("click", async (e) => { e.stopPropagation(); if (await deletePortfolio(btn.dataset.fid)) render(); }));
+    content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", (e) => { if (e.target.closest(".delete-portfolio-btn")) return; state.selectedPortfolioId = card.dataset.id; render(); }));
   }
 
   function renderPortfolioDetail() {
@@ -1300,7 +1286,7 @@
     const members = state.projects.filter(p => p.portfolioIds.includes(id));
     const nonMembers = state.projects.filter(p => !p.portfolioIds.includes(id));
     content().innerHTML = `
-      <button class="back-link" id="back-to-portfolios">← All portfolios</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;"><button class="back-link" id="back-to-portfolios">← All portfolios</button><button class="btn-text" id="delete-portfolio-detail" style="font-size:12px;">Delete portfolio</button></div>
       <div style="margin-bottom:16px;">
         <select id="add-to-portfolio-select" style="max-width:260px;">
           <option value="" selected disabled>+ Add a project to this portfolio</option>
@@ -1310,13 +1296,14 @@
       <div class="projects-grid">
         ${members.length ? members.map(p => { const progress = projectProgress(p.id); return `
           <div class="project-card" data-id="${p.id}">
-            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
             <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
             <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
             <button class="btn-text remove-from-portfolio-btn" data-pid="${p.id}" style="margin-top:8px;font-size:11px;">Remove from portfolio</button>
           </div>`; }).join("") : `<div class="empty-state">No projects in this portfolio yet.</div>`}
       </div>`;
     el("#back-to-portfolios").addEventListener("click", () => { state.selectedPortfolioId = null; setView("portfolios"); });
+    el("#delete-portfolio-detail").addEventListener("click", async () => { if (await deletePortfolio(id)) setView("portfolios"); });
     el("#add-to-portfolio-select").addEventListener("change", (e) => { if (e.target.value) addProjectToPortfolio(e.target.value, id); });
     content().querySelectorAll(".remove-from-portfolio-btn").forEach(btn => btn.addEventListener("click", (e) => { e.stopPropagation(); removeProjectFromPortfolio(btn.dataset.pid, id); }));
     content().querySelectorAll(".project-card").forEach(card => card.addEventListener("click", (e) => { if (e.target.closest(".remove-from-portfolio-btn")) return; state.selectedProjectId = card.dataset.id; render(); }));
@@ -1344,12 +1331,9 @@
     el("#page-title").textContent = "Team";
     el("#page-sub").textContent = "Everyone who has signed in";
     el("#team-filter-wrap").style.display = "none";
-    content().innerHTML = `<div class="grid-2">
+    content().innerHTML = `<div>
       <div class="panel"><h3>Staff (${state.people.length})</h3>
         ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}<span class="tag ${TEAM_CLASS[p.team] || ''}" style="margin-left:6px;">${p.team||'—'}</span></span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
-      </div>
-      <div class="panel"><h3>Clients (${state.clients.length})</h3>
-        ${state.clients.map(c => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(c.name)}">${initials(c.name)}</span>${escapeHtml(c.name)}</span></div>`).join("") || `<div class="empty-state">No clients have signed in yet.</div>`}
       </div>
     </div>
     <div class="banner" style="margin-top:16px;"><span>◐</span><span>People appear here automatically the first time they sign in with their email — there's nothing to add manually.</span></div>`;
@@ -1365,7 +1349,7 @@
       <div class="projects-grid">
         ${shared.length ? shared.map(p => { const progress = projectProgress(p.id); return `
           <div class="project-card" data-id="${p.id}">
-            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.client || "Internal")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
             <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
             <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
             <div style="margin-top:8px;font-size:11px;color:var(--ink-faint);">${p.clientIds.length} client${p.clientIds.length===1?'':'s'} with access</div>
@@ -1382,7 +1366,6 @@
     else if (state.view === "portfolios") renderPortfolios();
     else if (state.view === "timeline") renderTimeline();
     else if (state.view === "team") renderTeam();
-    else if (state.view === "client") renderClientPreview();
     else if (state.view === "time") renderTime();
     else if (state.view === "resourcing") renderResourcing();
   }
@@ -1774,7 +1757,6 @@
       <div class="section-label">Details</div>
       <div class="field"><label>Name</label><input id="ps-name" type="text" value="${escapeHtml(project.name)}" /></div>
       <div class="field"><label>Team</label><select id="ps-team">${TEAMS.map(t => `<option ${t===project.team?'selected':''}>${t}</option>`).join("")}</select></div>
-      <div class="field"><label>Client (optional)</label><input id="ps-client" type="text" value="${escapeHtml(project.client || "")}" /></div>
       <div class="field"><label>Status</label><select id="ps-status">${STATUSES.map(s => `<option ${s===project.status?'selected':''}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Start date</label><input id="ps-start" type="date" value="${project.startDate||''}" /></div>
       <div class="field"><label>Target end date</label><input id="ps-end" type="date" value="${project.endDate||''}" /></div>
@@ -1794,19 +1776,6 @@
       <div class="field"><label>Requested on</label><input id="ps-requested" type="date" value="${project.requestedOn || ''}" /></div>
       <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-res" style="width:100%;">Save resourcing</button></div>
 
-      <div class="section-label">Client access</div>
-      <div class="chip-row" id="ps-client-chips">
-        ${project.clientIds.map(cid => { const c = state.clients.find(c => c.id === cid); return c ? `<span class="tag" style="background:var(--coral-soft);color:var(--coral);display:inline-flex;align-items:center;gap:4px;">${escapeHtml(c.name)}<button class="remove-client-btn" data-cid="${cid}" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button></span>` : ""; }).join("") || `<span style="font-size:12px;color:var(--ink-faint);">No clients have access yet.</span>`}
-      </div>
-      <div class="field">
-        <select id="add-client-select">
-          <option value="" selected disabled>+ Give a client access</option>
-          ${state.clients.filter(c => !project.clientIds.includes(c.id)).map(c => `<option value="${c.id}">${escapeHtml(c.name)} (${escapeHtml(c.email)})</option>`).join("")}
-        </select>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">
-        <input type="checkbox" id="share-toggle" ${project.visibleToClient ? "checked" : ""} /> Share with client
-      </label>
 
       <div class="section-label" style="margin-top:14px;">Attachments</div>
       <div id="ps-attachments-list" style="margin-bottom:8px;"></div>
@@ -1821,7 +1790,7 @@
     el("#ps-close").addEventListener("click", () => root.innerHTML = "");
     el("#ps-save-details").addEventListener("click", () => {
       updateProjectField(projectId, {
-        name: el("#ps-name").value.trim() || project.name, team: el("#ps-team").value, client: el("#ps-client").value.trim(),
+        name: el("#ps-name").value.trim() || project.name, team: el("#ps-team").value, client: project.client || "",
         status: el("#ps-status").value, startDate: el("#ps-start").value, endDate: el("#ps-end").value
       });
       root.innerHTML = "";
@@ -1850,9 +1819,6 @@
       state.selectedProjectId = null;
       setView("projects");
     });
-    el("#add-client-select").addEventListener("change", (e) => { if (e.target.value) { addClientToProject(projectId, e.target.value); root.innerHTML = ""; } });
-    el("#share-toggle").addEventListener("change", (e) => updateProjectField(projectId, { visibleToClient: e.target.checked }));
-    root.querySelectorAll(".remove-client-btn").forEach(btn => btn.addEventListener("click", () => { removeClientFromProject(projectId, btn.dataset.cid); root.innerHTML = ""; }));
 
     async function renderProjectAttachments() {
       const { data } = await sb.from("attachments").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
@@ -1892,11 +1858,9 @@
       <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
       <div class="field"><label>Team</label><select id="mp-team">${TEAMS.map(t => `<option>${t}</option>`).join("")}</select></div>
       <div class="field"><label>Business unit served (Marketing campaigns)</label><select id="mp-bu"><option value="">None</option>${BUS.map(b => `<option>${b}</option>`).join("")}</select></div>
-      <div class="field"><label>Client (optional)</label><input id="mp-client" type="text" placeholder="Leave blank for internal" /></div>
       <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
       <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
       <div class="field"><label>Status</label><select id="mp-status">${STATUSES.map(s => `<option>${s}</option>`).join("")}</select></div>
-      <div class="field" style="display:flex; align-items:center; gap:8px;"><input id="mp-visible" type="checkbox" style="width:auto;" /><label style="margin:0;">Share with client</label></div>
       ${state.portfolios.length ? `<div class="field"><label>Portfolio (optional)</label><select id="mp-portfolio"><option value="">No portfolio</option>${state.portfolios.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("")}</select></div>` : ""}
       <div class="modal-actions"><button class="btn-ghost" id="mp-cancel">Cancel</button><button class="btn" id="mp-save">Create project</button></div>
     </div></div>`;
@@ -1907,10 +1871,10 @@
       if (!name) return;
       const portfolioField = el("#mp-portfolio");
       addProject({
-        name, team: el("#mp-team").value, client: el("#mp-client").value.trim(),
+        name, team: el("#mp-team").value, client: "",
         startDate: el("#mp-start").value || new Date().toISOString().slice(0,10),
         endDate: el("#mp-end").value || new Date().toISOString().slice(0,10),
-        status: el("#mp-status").value, visibleToClient: el("#mp-visible").checked, businessUnit: el("#mp-bu").value || null,
+        status: el("#mp-status").value, visibleToClient: false, businessUnit: el("#mp-bu").value || null,
         portfolioIds: (portfolioField && portfolioField.value) ? [portfolioField.value] : []
       });
       root.innerHTML = "";
