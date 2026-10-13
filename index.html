@@ -2324,6 +2324,7 @@
       <div class="res-period">Figures for ${monthName}${month === monthStart(today) ? " (month to date)" : ""}. Notes and actions in section 5 are for the meeting on ${fmtLong(date)}.</div>
       <div class="res-stack">
         ${limitPanelHtml()}
+        ${trendPanelHtml()}
         <div class="panel">
           <h3>1. Hours vs allocation <span class="res-note">5 min</span></h3>
           <div id="res-alloc"><div class="res-note">Loading hours…</div></div>
@@ -2421,6 +2422,7 @@
     }
 
     fillLimitPanel(bu);
+    fillTrendPanel(bu);
 
     // events
     content().querySelectorAll("[data-open]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.selectedProjectId = a.dataset.open; render(); }));
@@ -2838,6 +2840,58 @@
       root.innerHTML = "";
       await loadProjects();
       render();
+    });
+  }
+
+  // ---------- month-by-month chart ----------
+  function trendPanelHtml() {
+    return `<div class="panel">
+      <h3>Month by month: hours used vs limit</h3>
+      <div id="res-trend" class="table-scroll"><div class="res-note">Loading…</div></div>
+    </div>`;
+  }
+  function fillTrendPanel(bu) {
+    const units = me.isAdmin ? ["Education", "Planning Center"] : [bu];
+    const colors = { "Education": "var(--teal)", "Planning Center": "var(--coral)" };
+    const last = [monthStart(todayIso()), state.resMonth].sort().pop();
+    const months = limitMonths().filter(m => m <= last);
+    Promise.all(months.map(m => Promise.all([fetchCapacity(m), fetchTotals(m, monthEnd(m))]))).then(results => {
+      const box = el("#res-trend");
+      if (!box) return;
+      const data = months.map((m, i) => {
+        const [cap, t] = results[i];
+        return { m, units: units.map(u => ({ u, used: t[u] || 0, limit: cap ? cap * BU_TARGET[u] : null })) };
+      });
+      const peak = Math.max(10, ...data.flatMap(d => d.units.flatMap(x => [x.used, x.limit || 0]))) * 1.1;
+      const mag = Math.pow(10, Math.floor(Math.log10(peak / 4)));
+      const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(v => v * 4 >= peak);
+      const ticks = Math.ceil(peak / step), maxV = step * ticks;
+      const H = 240, top = 24, bottom = 36, left = 48, barW = 40, gap = 10;
+      const groupW = Math.min(220, Math.max(units.length === 2 ? 140 : 100, (640 - left) / months.length));
+      const W = left + months.length * groupW + 10;
+      const y = (v) => top + (H - top - bottom) * (1 - v / maxV);
+      let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Hours used per month against each unit's limit" style="max-width:100%;height:auto;font-family:inherit;">`;
+      for (let i = 0; i <= ticks; i++) {
+        const v = step * i, yy = y(v);
+        svg += `<line x1="${left}" x2="${W - 10}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/><text x="${left - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="var(--ink-faint)">${Math.round(v)}h</text>`;
+      }
+      data.forEach((d, gi) => {
+        const gx = left + gi * groupW + (groupW - (units.length * barW + (units.length - 1) * gap)) / 2;
+        d.units.forEach((x, ui) => {
+          const bx = gx + ui * (barW + gap), by = y(x.used), over = x.limit != null && x.used > x.limit;
+          svg += `<rect x="${bx}" y="${by}" width="${barW}" height="${Math.max(0, y(0) - by)}" rx="3" fill="${colors[x.u]}" opacity="${d.m === state.resMonth ? 1 : 0.55}"><title>${x.u}, ${fmtMonth(d.m)}: ${fmtH(x.used)} used${x.limit != null ? ` of ${fmtH(x.limit)}` : ""}</title></rect>`;
+          svg += `<text x="${bx + barW / 2}" y="${by - 4}" text-anchor="middle" font-size="10" fill="${over ? "var(--coral)" : "var(--ink-soft)"}" font-weight="${over ? 600 : 400}">${Math.round(x.used)}h</text>`;
+          if (x.limit != null) {
+            const ly = y(x.limit);
+            svg += `<line x1="${bx - 4}" x2="${bx + barW + 4}" y1="${ly}" y2="${ly}" stroke="var(--ink)" stroke-width="2" stroke-dasharray="4 2"><title>${x.u} limit, ${fmtMonth(d.m)}: ${fmtH(x.limit)}</title></line>`;
+          }
+        });
+        svg += `<text x="${left + gi * groupW + groupW / 2}" y="${H - 14}" text-anchor="middle" font-size="11" fill="${d.m === state.resMonth ? "var(--ink)" : "var(--ink-soft)"}" font-weight="${d.m === state.resMonth ? 600 : 400}">${new Date(d.m + "T00:00:00").toLocaleDateString(undefined, { month: "short", year: "2-digit" })}</text>`;
+      });
+      svg += `</svg>`;
+      const legend = units.map(u => `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;"><span style="width:12px;height:12px;border-radius:3px;background:${colors[u]};display:inline-block;"></span>${u} hours used</span>`).join("")
+        + `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;border-top:2px dashed var(--ink);display:inline-block;"></span>Monthly limit</span>`;
+      box.innerHTML = `<div class="res-note" style="margin-bottom:8px;">${legend}</div>${svg}<div class="res-note" style="margin-top:6px;">The selected month is shown in full colour. Hover over a bar for exact figures. A red number means that unit went over its limit that month.</div>`;
     });
   }
 })();
