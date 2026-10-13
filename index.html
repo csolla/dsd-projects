@@ -2245,7 +2245,12 @@
     state.resBu = bu;
     const series = MEETING_SERIES[bu], schedule = meetingSchedule(bu);
     if (!state.resMeetingDate || !schedule.includes(state.resMeetingDate)) state.resMeetingDate = defaultMeeting(bu);
-    const date = state.resMeetingDate, per = periodFor(bu, date), today = todayIso();
+    const date = state.resMeetingDate, today = todayIso();
+    const months = limitMonths();
+    if (!state.resMonth || !months.includes(state.resMonth)) state.resMonth = monthStart(today);
+    const month = state.resMonth, nm = nextMonth(month);
+    const per = { start: month, end: monthEnd(month), nextStart: nm, nextEnd: monthEnd(nm) };
+    const monthName = fmtMonth(month), nextName = fmtMonth(nm);
 
     el("#page-title").textContent = `Resourcing: ${bu}`;
     el("#page-sub").textContent = `Meeting with ${series.with}, ${fmtLong(date)}, ${series.how}`;
@@ -2254,13 +2259,15 @@
     const nextUp = defaultMeeting(bu);
     wrap.innerHTML = `
       ${me.isAdmin ? `<select id="res-bu" aria-label="Business unit">${Object.keys(MEETING_SERIES).map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select>` : ""}
-      <select id="res-date" aria-label="Meeting">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>${fmtLong(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
+      <select id="res-month-top" aria-label="Month">${months.map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
+      <select id="res-date" aria-label="Meeting for notes" title="Which meeting's notes and actions to show">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>Notes: ${fmtShort(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
       ${me.isAdmin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : `<button class="btn" id="res-request">Request work</button>`}`;
     if (me.isAdmin) {
       wrap.querySelector("#res-bu").addEventListener("change", (e) => { state.resBu = e.target.value; state.resMeetingDate = null; render(); });
       wrap.querySelector("#res-import").addEventListener("click", openImportModal);
     }
     wrap.querySelector("#res-date").addEventListener("change", (e) => { state.resMeetingDate = e.target.value; render(); });
+    wrap.querySelector("#res-month-top").addEventListener("change", (e) => { state.resMonth = e.target.value; render(); });
     if (!me.isAdmin) wrap.querySelector("#res-request").addEventListener("click", () => openRequestModal(bu));
 
     const counted = countedIds();
@@ -2314,7 +2321,7 @@
         <td class="num">${fmtH(unlinked[k].period)}</td><td class="num">${fmtH(unlinked[k].all)}</td><td></td></tr>`).join("");
 
     content().innerHTML = `
-      <div class="res-period">${per.isFirst ? "Baseline meeting. " : ""}Hours reviewed: ${fmtLong(per.start)} to ${fmtLong(per.end)}. Next period: ${fmtLong(per.nextStart)} to ${fmtLong(per.nextEnd)}.</div>
+      <div class="res-period">Figures for ${monthName}${month === monthStart(today) ? " (month to date)" : ""}. Notes and actions in section 5 are for the meeting on ${fmtLong(date)}.</div>
       <div class="res-stack">
         ${limitPanelHtml()}
         <div class="panel">
@@ -2325,7 +2332,7 @@
         <div class="panel">
           <div class="section-label"><h3 style="margin:0;">2. Campaigns: planned vs actual <span class="res-note">15 min</span></h3>${admin ? `<button class="btn-ghost" id="res-add-campaign">Add campaign</button>` : ""}</div>
           ${campaigns.length || unlinkedKeys.length ? `<div class="table-scroll"><table class="res-table">
-            <thead><tr><th>Priority</th><th>Campaign</th><th>Status</th><th class="num">Planned</th><th class="num">This period</th><th class="num">To date</th><th class="num">Plan used</th></tr></thead>
+            <thead><tr><th>Priority</th><th>Campaign</th><th>Status</th><th class="num">Planned</th><th class="num">This month</th><th class="num">To date</th><th class="num">Plan used</th></tr></thead>
             <tbody>${campaignRows}${unlinkedRows}</tbody></table></div>`
             : `<div class="empty-state">No ${bu} campaigns yet.${admin ? " Add the campaigns you agree with " + series.with + " to build the baseline." : ""}</div>`}
           ${unlinkedKeys.length && admin ? `<div class="res-note" style="margin-top:8px;">Rows marked "Not linked" are imported hours. Linking one moves every entry with that description onto the campaign.</div>` : ""}
@@ -2339,7 +2346,7 @@
               const isNew = p.requestedOn && p.requestedOn >= per.start && p.requestedOn <= per.end;
               const swap = p.swappedFor && state.projects.find(x => x.id === p.swappedFor);
               return `<tr>
-                <td style="max-width:340px;"><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.requestUrgent ? ` <span class="tag" style="background:var(--coral-soft);color:var(--coral);">Urgent</span>` : ""}${isNew ? ` <span class="tag tag-team-marketing">New this period</span>` : ""}${p.requestDetails ? `<div class="res-note" style="margin-top:3px;white-space:pre-wrap;">${escapeHtml(p.requestDetails)}</div>` : ""}</td>
+                <td style="max-width:340px;"><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.requestUrgent ? ` <span class="tag" style="background:var(--coral-soft);color:var(--coral);">Urgent</span>` : ""}${isNew ? ` <span class="tag tag-team-marketing">New this month</span>` : ""}${p.requestDetails ? `<div class="res-note" style="margin-top:3px;white-space:pre-wrap;">${escapeHtml(p.requestDetails)}</div>` : ""}</td>
                 <td style="white-space:nowrap;">${p.requestedOn ? fmtShort(p.requestedOn) : "—"}${p.requestedBy ? `<div class="res-note">by ${escapeHtml((personById(p.requestedBy) || {}).name || "director")}</div>` : ""}</td>
                 <td style="white-space:nowrap;">${p.requestDeadline ? fmtShort(p.requestDeadline) : "—"}</td>
                 <td>${admin ? `<select class="res-ustatus" data-pid="${p.id}" style="width:auto;text-align:left;">${Object.keys(UNPLANNED_LABEL).map(k => `<option value="${k}" ${k === (p.unplannedStatus || "logged") ? "selected" : ""}>${UNPLANNED_LABEL[k]}</option>`).join("")}</select>` : UNPLANNED_LABEL[p.unplannedStatus || "logged"]}</td>
@@ -2350,16 +2357,16 @@
         </div>
 
         <div class="panel">
-          <h3>4. Next period pipeline <span class="res-note">10 min</span></h3>
+          <h3>4. Next month pipeline: ${nextName} <span class="res-note">10 min</span></h3>
           ${pipeline.length ? `<div class="table-scroll"><table class="res-table">
             <thead><tr><th>Campaign</th><th>Dates</th><th class="num">Planned hours left</th></tr></thead>
             <tbody>${pipeline.map(p => `<tr><td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a></td><td>${fmtShort(p.startDate)} to ${fmtShort(p.endDate)}</td><td class="num">${planOf(p) != null ? fmtH(Math.max(0, planOf(p) - hoursOf(p.id, false))) : "No plan"}</td></tr>`).join("")}</tbody></table></div>
             <div class="res-note" id="res-capacity" style="margin-top:10px;"></div>`
-            : `<div class="empty-state">Nothing scheduled for ${fmtShort(per.nextStart)} to ${fmtShort(per.nextEnd)}.</div>`}
+            : `<div class="empty-state">Nothing scheduled for ${nextName}.</div>`}
         </div>
 
         <div class="panel">
-          <h3>5. Decisions and actions <span class="res-note">5 min</span></h3>
+          <h3>5. Decisions and actions: meeting on ${fmtShort(date)} <span class="res-note">5 min</span></h3>
           ${meeting ? `
             ${admin ? `<div class="field"><label for="res-notes">Notes</label><textarea id="res-notes" rows="4" class="res-textarea">${escapeHtml(meeting.notes || "")}</textarea></div>`
               : (meeting.notes ? `<div class="res-notes-read">${escapeHtml(meeting.notes)}</div>` : "")}
@@ -2402,16 +2409,14 @@
           <div style="text-align:right;"><span class="alloc-num">${total ? pct(share) : "—"}</span> <span class="res-note">${fmtH(h)}${target != null ? `, target ${pct(target)}` : ""}</span></div>
         </div>`;
       }).join("");
-      box.innerHTML = total ? rows + `<div class="res-note" style="margin-top:10px;">Marketing total for the period: ${fmtH(total)} (Marita, Daisy and Steph). The line on each bar marks the target.</div>`
-        : `<div class="res-note">No hours logged between ${fmtShort(per.start)} and ${fmtShort(per.end)} yet.</div>`;
+      box.innerHTML = total ? rows + `<div class="res-note" style="margin-top:10px;">Marketing total for ${monthName}: ${fmtH(total)} (Marita, Daisy and Steph). The line on each bar marks the target.</div>`
+        : `<div class="res-note">No hours logged in ${monthName} yet.</div>`;
     });
     const capBox = el("#res-capacity");
     if (capBox && BU_TARGET[bu] != null) {
-      fetchTotals(addDays(today, -28), addDays(today, -1)).then(t => {
-        if (!t.Total || !el("#res-capacity")) return;
-        const days = (new Date(per.nextEnd) - new Date(per.nextStart)) / 86400000 + 1;
-        const est = t.Total / 28 * days * BU_TARGET[bu];
-        el("#res-capacity").textContent = `Expected ${bu} capacity next period: about ${fmtH(est)}, based on the team's last four weeks and the ${pct(BU_TARGET[bu])} allocation.`;
+      fetchCapacity(nm).then(cap => {
+        if (!el("#res-capacity")) return;
+        el("#res-capacity").textContent = cap ? `${bu} limit for ${nextName}: ${fmtH(cap * BU_TARGET[bu])}. Compare it with the planned hours left above to see if the work fits.` : `No capacity set for ${nextName} yet.`;
       });
     }
 
@@ -2663,8 +2668,7 @@
     const months = limitMonths();
     if (!state.resMonth || !months.includes(state.resMonth)) state.resMonth = monthStart(todayIso());
     return `<div class="panel">
-      <div class="section-label"><h3 style="margin:0;">Monthly limit</h3>
-        <select id="res-month" aria-label="Month">${months.map(m => `<option value="${m}" ${m === state.resMonth ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select></div>
+      <h3>Monthly limit: ${fmtMonth(state.resMonth)}</h3>
       <div id="res-limit"><div class="res-note">Loading…</div></div>
     </div>`;
   }
