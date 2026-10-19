@@ -310,6 +310,7 @@
       <button class="nav-item" data-view="portfolios"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="14" height="4" rx="1.2"/><rect x="3" y="11" width="14" height="4" rx="1.2"/></svg>Portfolios</button>
       <button class="nav-item" data-view="timeline"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h14M3 10h9M3 14h11"/></svg>Timeline</button>
       <button class="nav-item" data-view="team"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="2.6"/><circle cx="14" cy="8.5" r="2.1"/><path d="M2.5 16c0-2.8 2-4.6 4.5-4.6s4.5 1.8 4.5 4.6M12 16c.2-2 1.6-3.4 3.3-3.4 2 0 3.7 1.6 4.2 3.7"/></svg>Team</button>
+      <button class="nav-item" data-view="mytasks"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6l1.5 1.5L8 5"/><path d="M4 12l1.5 1.5L8 11"/><path d="M10.5 6.5H16M10.5 12.5H16"/></svg>My tasks</button>
       <button class="nav-item" data-view="time"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7"/><path d="M10 6v4l2.6 1.8"/></svg>My time</button>
       <button class="nav-item" data-view="resourcing" id="nav-resourcing" hidden><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 16h14"/><rect x="4" y="9" width="3" height="5" rx="0.8"/><rect x="8.5" y="5" width="3" height="9" rx="0.8"/><rect x="13" y="11" width="3" height="3" rx="0.8"/></svg>Resourcing</button>
     </nav>
@@ -380,7 +381,7 @@
     dashboardScope: "dsd", dashboardTeam: null,
     timeEntries: [], resMeetings: [], resItems: [], resFlags: [], resTotalsCache: {},
     resBu: null, resMeetingDate: null, timeWeek: null,
-    holidays: [], timeOff: [], resCapCache: {}, resMonth: null
+    holidays: [], timeOff: [], resCapCache: {}, resMonth: null, myTasksShowDone: false
   };
   let channels = {};
 
@@ -1369,6 +1370,7 @@
     else if (state.view === "timeline") renderTimeline();
     else if (state.view === "team") renderTeam();
     else if (state.view === "time") renderTime();
+    else if (state.view === "mytasks") renderMyTasks();
     else if (state.view === "resourcing") renderResourcing();
   }
 
@@ -2893,6 +2895,73 @@
         + `<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:16px;border-top:2px dashed var(--ink);display:inline-block;"></span>Monthly limit</span>`;
       box.innerHTML = `<div class="res-note" style="margin-bottom:8px;">${legend}</div>${svg}<div class="res-note" style="margin-top:6px;">The selected month is shown in full colour. Hover over a bar for exact figures. A red number means that unit went over its limit that month.</div>`;
     });
+  }
+
+  // =========================================================
+  // MY TASKS view
+  // =========================================================
+  function renderMyTasks() {
+    el("#page-title").textContent = "My tasks";
+    const today = todayIso(), weekEnd = addDays(mondayOf(today), 6);
+    const mine = state.tasks.filter(t => t.assigneeId === me.id);
+    const open = mine.filter(t => t.status !== "done");
+    const done = mine.filter(t => t.status === "done");
+    el("#page-sub").textContent = `${open.length} open task${open.length === 1 ? "" : "s"}`;
+    const wrap = el("#team-filter-wrap");
+    wrap.style.display = "flex";
+    wrap.innerHTML = `<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-soft);cursor:pointer;"><input type="checkbox" id="mt-show-done" ${state.myTasksShowDone ? "checked" : ""} style="width:auto;" /> Show completed (${done.length})</label>`;
+    wrap.querySelector("#mt-show-done").addEventListener("change", (e) => { state.myTasksShowDone = e.target.checked; render(); });
+
+    const groups = [
+      { key: "overdue", label: "Overdue", test: t => t.dueDate && t.dueDate < today },
+      { key: "today", label: "Today", test: t => t.dueDate === today },
+      { key: "week", label: "This week", test: t => t.dueDate && t.dueDate > today && t.dueDate <= weekEnd },
+      { key: "later", label: "Later", test: t => t.dueDate && t.dueDate > weekEnd },
+      { key: "none", label: "No date", test: t => !t.dueDate }
+    ];
+    const byDue = (a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999") || a.title.localeCompare(b.title);
+    const projectNames = (t) => t.projectIds.map(id => (projectById(id) || {}).name).filter(Boolean).join(", ");
+    const row = (t) => `<div class="list-row mt-row" data-id="${t.id}" style="cursor:pointer;gap:12px;">
+        <span style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <input type="checkbox" class="mt-done" data-id="${t.id}" ${t.status === "done" ? "checked" : ""} aria-label="Mark complete" style="width:auto;flex-shrink:0;" />
+          <span style="min-width:0;">
+            <span style="${t.status === "done" ? "text-decoration:line-through;color:var(--ink-faint);" : ""}">${escapeHtml(t.title)}</span>
+            <span class="res-note" style="display:block;">${escapeHtml(projectNames(t) || "No project")}</span>
+          </span>
+        </span>
+        <span style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+          ${t.dueDate ? `<span class="${t.status !== "done" && t.dueDate < today ? "res-flag-over" : "res-note"}">${fmtShort(t.dueDate)}</span>` : ""}
+          <select class="task-status-select mt-status" data-id="${t.id}" aria-label="Status">${TASK_COLS.map(c => `<option value="${c.key}" ${c.key === t.status ? "selected" : ""}>${c.label}</option>`).join("")}</select>
+        </span>
+      </div>`;
+
+    let html = "";
+    if (!open.length && !(state.myTasksShowDone && done.length)) {
+      html = `<div class="empty-state">Nothing assigned to you right now.</div>`;
+    } else {
+      html = groups.map(g => {
+        const list = open.filter(g.test).sort(byDue);
+        return list.length ? `<div class="panel" style="margin-bottom:16px;"><h3>${g.label} <span class="res-note">${list.length}</span></h3>${list.map(row).join("")}</div>` : "";
+      }).join("");
+      if (state.myTasksShowDone && done.length) {
+        html += `<div class="panel"><h3>Completed <span class="res-note">${done.length}</span></h3>${done.slice().sort(byDue).map(row).join("")}</div>`;
+      }
+    }
+    content().innerHTML = html;
+
+    content().querySelectorAll(".mt-row").forEach(r => r.addEventListener("click", (e) => {
+      if (e.target.closest("select, input")) return;
+      openTaskDetail(r.dataset.id);
+    }));
+    content().querySelectorAll(".mt-status").forEach(s => s.addEventListener("change", async (e) => {
+      const t = state.tasks.find(t => t.id === s.dataset.id); if (t) t.status = e.target.value;
+      await updateTaskStatus(s.dataset.id, e.target.value); render();
+    }));
+    content().querySelectorAll(".mt-done").forEach(c => c.addEventListener("change", async (e) => {
+      const v = e.target.checked ? "done" : "todo";
+      const t = state.tasks.find(t => t.id === c.dataset.id); if (t) t.status = v;
+      await updateTaskStatus(c.dataset.id, v); render();
+    }));
   }
 })();
 </script>
