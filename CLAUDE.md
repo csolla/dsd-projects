@@ -13,7 +13,7 @@ Context for Claude Code. This file summarises how the tool is built, the decisio
 
 - **Frontend:** a single file, `index.html` (HTML, CSS and vanilla JS in one IIFE), in the repo `csolla/dsd-projects`, served by GitHub Pages at https://csolla.github.io/dsd-projects/
 - **Backend:** Supabase (`https://yxevnyyzezfdsbclhvvp.supabase.co`), with Row Level Security on and Realtime subscriptions. The client is loaded from the jsDelivr CDN (`@supabase/supabase-js@2`).
-- **Auth:** magic link by email, with no passwords. `@digitalsmiledesign.com` emails become `role = 'staff'`. Anyone else is `client`, and now just sees a "staff only" message.
+- **Auth:** magic link by email, with no passwords. Only `@digitalsmiledesign.com` emails can create an account (migration 12, plus a check on the login screen), and they become `role = 'staff'`. The app still has a "staff only" screen for any non-staff profile, but none existed when sign-ups were locked.
 - **Deploying:** until now Carlota pasted the full `index.html` into GitHub's web editor and committed it, then did a hard refresh (Cmd+Shift+R). With Claude Code, commit and push directly instead.
 - **SQL:** migrations are run by hand in the Supabase SQL editor, each as a new query. When giving Carlota SQL, give only the code block. She once pasted a whole explanation into the editor by mistake. Copying long SQL from the Claude Code terminal can drop text, so write it to a file in `supabase/migrations/`, put it on her clipboard with `pbcopy`, and have her paste it with Cmd+A then Cmd+V.
 - **Security checks:** the Supabase "public" (anon) key in `index.html` is meant to be public. Access is enforced by Row Level Security. To test what an anonymous visitor sees, query `/rest/v1/<table>` with only that key, and count rows rather than printing data.
@@ -45,6 +45,7 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
    - sets `security_invoker` on the `project_progress` view, which was readable without logging in
    - replaces "profiles viewable by signed-in users" with "profiles viewable by staff or self", using the new security definer helper `i_am_staff()`, so outsiders can't see the staff list
 7. `11_remove_client_project_access.sql` (run 20 October 2026) drops the "clients view shared projects" policy on `projects`, so clients see no projects at all. `share_with_client` and `project_clients` are kept, so client sharing can be restored by recreating the policy.
+8. `12_dsd_emails_only.sql` (run 20 October 2026) makes `handle_new_user()` raise an exception for any email not ending in `@digitalsmiledesign.com`, so the account is never created and no link is sent. To let an outsider in again (a freelancer, say), this function needs changing.
 
 Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The base schema (01–04) isn't in the repo.
 

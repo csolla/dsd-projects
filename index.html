@@ -438,6 +438,12 @@
     const email = el("#auth-email").value.trim();
     const statusEl = el("#auth-status");
     if (!email) return;
+    // The database refuses other domains too (migration 12); this just gives a clearer message
+    if (!/@digitalsmiledesign\.com$/i.test(email)) {
+      statusEl.className = "auth-status error";
+      statusEl.textContent = "Please use your @digitalsmiledesign.com email.";
+      return;
+    }
     statusEl.className = "auth-status";
     statusEl.textContent = "Sending…";
     try {
@@ -446,7 +452,9 @@
       statusEl.textContent = "Check your email for a sign-in link.";
     } catch (e) {
       statusEl.className = "auth-status error";
-      statusEl.textContent = e.message || "Couldn't send the link. Try again.";
+      statusEl.textContent = /database error/i.test(e.message || "")
+        ? "Only @digitalsmiledesign.com emails can sign in."
+        : (e.message || "Couldn't send the link. Try again.");
     }
   });
 
