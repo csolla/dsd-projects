@@ -385,7 +385,7 @@
     selectedProjectId: null, selectedPortfolioId: null, teamFilter: "all",
     dashboardScope: "dsd", dashboardTeam: null,
     timeEntries: [], resMeetings: [], resItems: [], resFlags: [], resTotalsCache: {},
-    resBu: null, resMeetingDate: null, timeWeek: null,
+    resBu: null, resMeetingDate: null, timeWeek: null, teamTimeMode: "week", teamTimeMonth: null, teamTimePerson: "all",
     holidays: [], timeOff: [], resCapCache: {}, resMonth: null, myTasksShowDone: false
   };
   let channels = {};
@@ -2156,7 +2156,9 @@
               <td><button class="btn-text" data-row="${i}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
             : `<div class="empty-state">Nothing logged this week yet. Add your first entry above.</div>`}
         </div>
+        ${me.isAdmin ? `<div class="panel" id="team-time"></div>` : ""}
       </div>`;
+    if (me.isAdmin) renderTeamTime();
 
     const projSel = el("#lt-project"), taskSel = el("#lt-task"), buSel = el("#lt-bu");
     const syncTask = () => {
@@ -2188,6 +2190,94 @@
       if (ok) render();
     });
     content().querySelectorAll("[data-row]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this entry?")) { await deleteEntryRow(mine[Number(b.dataset.row)]); render(); } }));
+  }
+
+  // Team time (admin only): everyone's hours by day for a week, or by week for a month
+  function renderTeamTime() {
+    const box = el("#team-time");
+    if (!box) return;
+    const mode = state.teamTimeMode;
+    if (!state.teamTimeMonth) state.teamTimeMonth = state.timeWeek.slice(0, 8) + "01";
+    let start, end, cols;
+    if (mode === "week") {
+      start = state.timeWeek; end = addDays(start, 6);
+      cols = [0, 1, 2, 3, 4, 5, 6].map(i => { const d = addDays(start, i); return { from: d, to: d, label: new Date(d + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" }), weekend: i >= 5 }; });
+    } else {
+      start = state.teamTimeMonth;
+      const next = new Date(start + "T00:00:00"); next.setMonth(next.getMonth() + 1);
+      end = addDays(localIso(next), -1);
+      cols = [];
+      for (let w = mondayOf(start); w <= end; w = addDays(w, 7)) {
+        const from = w < start ? start : w, to = addDays(w, 6) > end ? end : addDays(w, 6);
+        cols.push({ from, to, label: from === to ? fmtShort(from) : `${new Date(from + "T00:00:00").getDate()}–${fmtShort(to)}` });
+      }
+    }
+    const inPeriod = state.timeEntries.filter(e => e.entry_date >= start && e.entry_date <= end);
+    // Weekend columns only appear when someone logged time at the weekend
+    cols = cols.filter(c => !c.weekend || inPeriod.some(e => e.entry_date === c.from));
+
+    // People: anyone who has ever logged time, plus everyone counted in capacity
+    const nameOf = id => { const p = state.people.find(p => p.id === id); return p ? p.name : "Unknown"; };
+    const ids = new Set(state.timeEntries.map(e => e.person_id));
+    state.people.filter(p => p.counts_in_capacity).forEach(p => ids.add(p.id));
+    const people = [...ids].map(id => ({ id, name: nameOf(id) })).sort((a, b) => a.name.localeCompare(b.name));
+    if (state.teamTimePerson !== "all" && !ids.has(state.teamTimePerson)) state.teamTimePerson = "all";
+    const sel = state.teamTimePerson;
+    const shown = sel === "all" ? people : people.filter(p => p.id === sel);
+
+    const sum = (list) => list.reduce((s, e) => s + Number(e.hours), 0);
+    const cell = (h) => h ? fmtH(h).replace("h", "") : `<span style="color:var(--ink-faint);">–</span>`;
+    const rows = shown.map(p => {
+      const theirs = inPeriod.filter(e => e.person_id === p.id);
+      return { ...p, byCol: cols.map(c => sum(theirs.filter(e => e.entry_date >= c.from && e.entry_date <= c.to))), total: sum(theirs) };
+    });
+    const colTotals = cols.map((c, i) => rows.reduce((s, r) => s + r.byCol[i], 0));
+    const grand = rows.reduce((s, r) => s + r.total, 0);
+    const periodLabel = mode === "week" ? `Week of ${fmtLong(start)}` : fmtMonth(start);
+
+    let detail = "";
+    if (sel !== "all") {
+      const raw = inPeriod.filter(e => e.person_id === sel)
+        .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.created_at.localeCompare(b.created_at));
+      const byBu = {};
+      raw.forEach(e => { byBu[e.business_unit] = (byBu[e.business_unit] || 0) + Number(e.hours); });
+      const list = groupEntries(raw);
+      detail = `
+        <h3 style="margin-top:22px;">${escapeHtml(nameOf(sel))}: ${fmtH(sum(raw))} ${mode === "week" ? "this week" : "this month"}</h3>
+        ${Object.keys(byBu).length ? `<div class="chip-row" style="margin-bottom:12px;">${BUS.filter(b => byBu[b]).map(b => `<span class="tag ${BU_TAG[b]}">${b} ${fmtH(byBu[b])}</span>`).join(" ")}</div>` : ""}
+        ${list.length ? `<div class="table-scroll"><table class="res-table">
+          <thead><tr><th>Day</th><th>Work</th><th>Business unit</th><th class="num">Hours</th><th>Notes</th></tr></thead>
+          <tbody>${list.map(e => `<tr><td>${fmtShort(e.entry_date)}</td><td>${escapeHtml(entryLabel(e))}</td><td>${buTagHtml(e.business_unit)}</td><td class="num">${fmtH(e.hours)}</td><td class="res-note">${escapeHtml(e.notes || "")}</td></tr>`).join("")}</tbody></table></div>`
+          : `<div class="empty-state">No time logged in this period.</div>`}`;
+    }
+
+    box.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <h3 style="margin:0;">Team time <span class="res-note" style="font-weight:400;">· ${periodLabel}</span></h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+          ${mode === "month" ? `<button class="btn-ghost" id="tt-prev" title="Previous month">‹</button><button class="btn-ghost" id="tt-next" title="Next month">›</button>` : ""}
+          <div style="display:flex;"><button class="scope-btn ${mode === "week" ? "active" : ""}" data-tt-mode="week">Week</button><button class="scope-btn ${mode === "month" ? "active" : ""}" data-tt-mode="month">Month</button></div>
+          <select id="tt-person" class="btn-ghost" aria-label="Person"><option value="all">Everybody</option>${people.map(p => `<option value="${p.id}" ${p.id === sel ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("")}</select>
+        </div>
+      </div>
+      ${mode === "week" ? `<div class="res-note" style="margin:-6px 0 12px;">Follows the week buttons at the top of the page.</div>` : ""}
+      ${people.length ? `<div class="table-scroll"><table class="res-table">
+        <thead><tr><th>Person</th>${cols.map(c => `<th class="num">${c.label}</th>`).join("")}<th class="num">Total</th></tr></thead>
+        <tbody>${rows.map(r => `<tr><td>${escapeHtml(r.name)}</td>${r.byCol.map(cell).map(v => `<td class="num">${v}</td>`).join("")}<td class="num"><strong>${fmtH(r.total)}</strong></td></tr>`).join("")}
+        ${sel === "all" && rows.length > 1 ? `<tr><td><strong>Total</strong></td>${colTotals.map(v => `<td class="num"><strong>${cell(v)}</strong></td>`).join("")}<td class="num"><strong>${fmtH(grand)}</strong></td></tr>` : ""}</tbody></table></div>`
+        : `<div class="empty-state">Nobody has logged time yet.</div>`}
+      ${detail}`;
+
+    box.querySelectorAll("[data-tt-mode]").forEach(b => b.addEventListener("click", () => {
+      state.teamTimeMode = b.dataset.ttMode;
+      if (state.teamTimeMode === "month") state.teamTimeMonth = state.timeWeek.slice(0, 8) + "01";
+      renderTeamTime();
+    }));
+    const shiftMonth = (n) => { const d = new Date(state.teamTimeMonth + "T00:00:00"); d.setMonth(d.getMonth() + n); state.teamTimeMonth = localIso(d); renderTeamTime(); };
+    const prev = box.querySelector("#tt-prev"), next = box.querySelector("#tt-next");
+    if (prev) prev.addEventListener("click", () => shiftMonth(-1));
+    if (next) next.addEventListener("click", () => shiftMonth(1));
+    box.querySelector("#tt-person").addEventListener("change", (e) => { state.teamTimePerson = e.target.value; renderTeamTime(); });
   }
 
   // Time section inside the task panel
