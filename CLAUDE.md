@@ -1,6 +1,6 @@
 # DSD Projects: project management tool
 
-Context for Claude Code. This file summarises how the tool is built, the decisions behind it and how Carlota likes to work, so a new session can pick up without re-explaining. Last updated: 19 October 2026.
+Context for Claude Code. This file summarises how the tool is built, the decisions behind it and how Carlota likes to work, so a new session can pick up without re-explaining. Last updated: 20 October 2026.
 
 ## Who and what
 
@@ -15,7 +15,8 @@ Context for Claude Code. This file summarises how the tool is built, the decisio
 - **Backend:** Supabase (`https://yxevnyyzezfdsbclhvvp.supabase.co`), with Row Level Security on and Realtime subscriptions. The client is loaded from the jsDelivr CDN (`@supabase/supabase-js@2`).
 - **Auth:** magic link by email, with no passwords. `@digitalsmiledesign.com` emails become `role = 'staff'`. Anyone else is `client`, and now just sees a "staff only" message.
 - **Deploying:** until now Carlota pasted the full `index.html` into GitHub's web editor and committed it, then did a hard refresh (Cmd+Shift+R). With Claude Code, commit and push directly instead.
-- **SQL:** migrations are run by hand in the Supabase SQL editor, each as a new query. When giving Carlota SQL, give only the code block. She once pasted a whole explanation into the editor by mistake.
+- **SQL:** migrations are run by hand in the Supabase SQL editor, each as a new query. When giving Carlota SQL, give only the code block. She once pasted a whole explanation into the editor by mistake. Copying long SQL from the Claude Code terminal can drop text, so write it to a file in `supabase/migrations/`, put it on her clipboard with `pbcopy`, and have her paste it with Cmd+A then Cmd+V.
+- **Security checks:** the Supabase "public" (anon) key in `index.html` is meant to be public. Access is enforced by Row Level Security. To test what an anonymous visitor sees, query `/rest/v1/<table>` with only that key, and count rows rather than printing data.
 - **Claude Artifacts can't call Supabase.** Their content-security policy blocks it, so the tool must stay externally hosted.
 
 ## SQL migrations, in order
@@ -28,7 +29,7 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
    - the table `time_entries`, plus the `resourcing_totals(start, end)` function (security definer)
    - the tables `resourcing_meetings`, `resourcing_items` (decisions and actions) and `resourcing_flags` (flags for Brendon, admin only)
    - helper functions `is_resourcing_admin()`, `my_resourcing_bu()` and `bu_rollup()`
-   - a trigger that stops non-admins from changing role or capacity columns
+   - a trigger that stops non-admins from changing the resourcing columns (it didn't cover `role` until migration 10)
 2. `06_capacity_limits.sql` adds:
    - profile columns `daily_hours` and `holiday_region` ('Madrid' or 'England')
    - the tables `public_holidays` and `time_off`
@@ -39,8 +40,12 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
 3. `07_work_requests.sql` adds the project columns `requested_by`, `request_details`, `request_deadline` and `request_urgent`, and a trigger `notify_work_request` that notifies the admin when a director requests work.
 4. `08_shared_campaigns.sql` adds project columns `budget_education` and `budget_pc`, the task column `business_unit`, and the time entry column `split_group` (it links the two halves of a shared entry).
 5. `09_unify_business_units.sql` moves Delight into Planning Center everywhere and makes `projects.team` mirror `business_unit`. It restricts the allowed options to Education, Planning Center, Corporate and Shared for projects and tasks, and to Education, Planning Center and Corporate for time entries.
+6. `10_lock_role.sql` (security fix, run 20 October 2026):
+   - adds `role` to the admin-only columns in the `protect_resourcing_profile_cols` trigger. Before this, the "users update own profile" policy let a client make themselves staff
+   - sets `security_invoker` on the `project_progress` view, which was readable without logging in
+   - replaces "profiles viewable by signed-in users" with "profiles viewable by staff or self", using the new security definer helper `i_am_staff()`, so outsiders can't see the staff list
 
-Suggestion: keep these files in the repo under `supabase/migrations/` so they're versioned.
+Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The base schema (01–04) isn't in the repo.
 
 ## Business units and departments (unified, October 2026)
 
