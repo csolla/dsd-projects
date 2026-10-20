@@ -44,6 +44,7 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
    - adds `role` to the admin-only columns in the `protect_resourcing_profile_cols` trigger. Before this, the "users update own profile" policy let a client make themselves staff
    - sets `security_invoker` on the `project_progress` view, which was readable without logging in
    - replaces "profiles viewable by signed-in users" with "profiles viewable by staff or self", using the new security definer helper `i_am_staff()`, so outsiders can't see the staff list
+7. `11_remove_client_project_access.sql` (run 20 October 2026) drops the "clients view shared projects" policy on `projects`, so clients see no projects at all. `share_with_client` and `project_clients` are kept, so client sharing can be restored by recreating the policy.
 
 Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The base schema (01–04) isn't in the repo.
 
@@ -54,7 +55,7 @@ Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The bas
 - **Delight** no longer exists. It's folded into Planning Center.
 - **Marketing** is only a *people department* (`TEAMS`, for profiles), never a project or hours option.
 - **Projects have one field: Business unit.** The Team field was removed from the interface. `projects.team` is kept in sync with the business unit for compatibility.
-- **Client projects were removed** from the interface in October 2026. The data is still in the database, and the code could be restored if needed.
+- **Client projects were removed** from the interface in October 2026, and clients lost database access to them in migration 11. The data is still in the database, and the code could be restored if needed.
 
 ## Features (current)
 
