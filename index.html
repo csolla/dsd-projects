@@ -290,9 +290,8 @@
           <option value="all">All teams</option>
           <option value="Education">Education</option>
           <option value="Planning Center">Planning Center</option>
-          <option value="Delight">Delight</option>
-          <option value="Marketing">Marketing</option>
           <option value="Corporate">Corporate</option>
+          <option value="Marketing">Marketing</option>
         </select>
         <select id="sf-status">
           <option value="all">Any status</option>
@@ -365,8 +364,13 @@
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4ZXZueXl6ZXpmZHNiY2xodnZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1NTAyNzIsImV4cCI6MjEwNTEyNjI3Mn0.lzNi8WSV1e7PgumfdrDZtd3OmPs9J8CP1PXftBu0OFQ";
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  const TEAMS = ["Education", "Planning Center", "Delight", "Marketing", "Corporate"];
-  const TEAM_CLASS = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Delight": "tag-team-delight", "Marketing": "tag-team-marketing", "Corporate": "tag-team-corporate" };
+  // People's departments (Marketing is a department, not a business unit)
+  const TEAMS = ["Education", "Planning Center", "Corporate", "Marketing"];
+  // Business units, used for projects, tasks and hours
+  const BUSINESS_UNITS = ["Education", "Planning Center", "Corporate"];
+  const PROJECT_BUS = ["Education", "Planning Center", "Corporate", "Shared"];
+  const buLabel = (b) => b === "Shared" ? "Shared: Education + Planning Center" : b;
+  const TEAM_CLASS = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Marketing": "tag-team-marketing", "Corporate": "tag-team-corporate", "Shared": "tag-team-delight" };
   const STATUSES = ["planning", "active", "review", "launched"];
   const TASK_COLS = [{ key: "todo", label: "To do" }, { key: "doing", label: "In progress" }, { key: "review", label: "Review" }, { key: "done", label: "Done" }];
   const STATUS_LABEL = { todo: "To do", doing: "In progress", review: "Review", done: "Done" };
@@ -544,7 +548,7 @@
     const { data: pf } = await sb.from("project_portfolios").select("*");
     const { data: pc } = await sb.from("project_clients").select("*, profiles(name)");
     state.projects = (projects || []).map(p => ({
-      id: p.id, name: p.name, team: p.team, client: p.client_company, status: p.status,
+      id: p.id, name: p.name, team: (p.business_unit === "Delight" ? "Planning Center" : p.business_unit) || null, client: p.client_company, status: p.status,
       startDate: p.start_date, endDate: p.end_date, visibleToClient: p.share_with_client,
       budget: p.budget, budgetSpent: p.budget_spent || 0,
       businessUnit: p.business_unit || null, plannedHours: p.planned_hours != null ? Number(p.planned_hours) : null, priority: p.priority,
@@ -735,7 +739,7 @@
   // =========================================================
   async function addProject(data) {
     const { data: row, error } = await sb.from("projects").insert({
-      name: data.name, team: data.team, client_company: data.client, status: data.status,
+      name: data.name, team: data.businessUnit || "", client_company: data.client, status: data.status,
       start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient,
       business_unit: data.businessUnit || null, planned_hours: data.plannedHours != null ? data.plannedHours : null, priority: data.priority != null ? data.priority : null,
       is_unplanned: !!data.isUnplanned, unplanned_status: data.unplannedStatus || null, requested_on: data.requestedOn || null,
@@ -751,6 +755,7 @@
       businessUnit: "business_unit", plannedHours: "planned_hours", isUnplanned: "is_unplanned", unplannedStatus: "unplanned_status", requestedOn: "requested_on", swappedFor: "swapped_for", budgetEducation: "budget_education", budgetPc: "budget_pc" };
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
+    if ("businessUnit" in fields) payload.team = fields.businessUnit || "";
     await sb.from("projects").update(payload).eq("id", projectId);
   }
   async function deleteProject(projectId) { await sb.from("projects").delete().eq("id", projectId); }
@@ -1026,10 +1031,12 @@
     let subtasksForWorkload = state.openSubtasks;
     let unassignedTasks = [];
     if (scope === "team") {
-      projects = state.projects.filter(p => p.team === state.dashboardTeam);
+      const dt = state.dashboardTeam;
+      projects = state.projects.filter(p => p.team === dt || (p.team === "Shared" && (dt === "Education" || dt === "Planning Center"))
+        || state.tasks.some(t => t.projectIds.includes(p.id) && (() => { const a = personByName(t.assignee); return a && a.team === dt; })()));
       tasks = state.tasks.filter(t => { const p = personByName(t.assignee); return p && p.team === state.dashboardTeam; });
       subtasksForWorkload = state.openSubtasks.filter(s => { const p = personById(s.assignee_id); return p && p.team === state.dashboardTeam; });
-      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.projectIds.some(pid => { const proj = projectById(pid); return proj && proj.team === state.dashboardTeam; }));
+      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.projectIds.some(pid => { const proj = projectById(pid); return proj && projects.includes(proj); }));
     } else if (scope === "me") {
       tasks = state.tasks.filter(t => t.assignee === me.name);
       const myProjectIds = new Set(tasks.flatMap(t => t.projectIds));
@@ -1149,25 +1156,25 @@
 
   function renderProjects() {
     el("#page-title").textContent = "Projects";
-    el("#page-sub").textContent = "Every project across every team";
+    el("#page-sub").textContent = "Every project across every business unit";
     const wrap = el("#team-filter-wrap");
     wrap.style.display = "flex";
     wrap.innerHTML = `
-      <select id="team-filter-select"><option value="all">All teams</option>${TEAMS.map(t => `<option value="${t}" ${state.teamFilter===t?'selected':''}>${t}</option>`).join("")}</select>
+      <select id="team-filter-select"><option value="all">All business units</option>${PROJECT_BUS.map(t => `<option value="${t}" ${state.teamFilter===t?'selected':''}>${t === "Shared" ? "Shared campaigns" : t}</option>`).join("")}<option value="none" ${state.teamFilter==='none'?'selected':''}>No business unit</option></select>
       <button class="btn" id="new-project-btn" style="margin-left:8px;">New project</button>`;
     wrap.querySelector("#team-filter-select").value = state.teamFilter;
     wrap.querySelector("#team-filter-select").addEventListener("change", (e) => { state.teamFilter = e.target.value; render(); });
     wrap.querySelector("#new-project-btn").addEventListener("click", openNewProjectModal);
 
-    const filtered = state.projects.filter(p => state.teamFilter === "all" || p.team === state.teamFilter);
+    const filtered = state.projects.filter(p => state.teamFilter === "all" || (state.teamFilter === "none" ? !p.team : p.team === state.teamFilter));
     content().innerHTML = `<div class="projects-grid">
       ${filtered.length ? filtered.map(p => {
         const progress = projectProgress(p.id);
         return `
         <div class="project-card" data-id="${p.id}">
           <div class="project-card-top">
-            <div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div>
-            <span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span>
+            <div><div class="project-name">${escapeHtml(p.name)}</div></div>
+            <span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}">${p.team === "Shared" ? "Shared" : (p.team || "No business unit")}</span>
           </div>
           <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
           <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
@@ -1299,7 +1306,7 @@
       <div class="projects-grid">
         ${members.length ? members.map(p => { const progress = projectProgress(p.id); return `
           <div class="project-card" data-id="${p.id}">
-            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div></div><span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}">${p.team === "Shared" ? "Shared" : (p.team || "No business unit")}</span></div>
             <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
             <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
             <button class="btn-text remove-from-portfolio-btn" data-pid="${p.id}" style="margin-top:8px;font-size:11px;">Remove from portfolio</button>
@@ -1325,7 +1332,7 @@
     content().innerHTML = `<div class="panel">
       <div class="axis-row"><div></div><div class="axis-labels"><span>${fmtDate(minDate.toISOString().slice(0,10))}</span><span>${fmtDate(maxDate.toISOString().slice(0,10))}</span></div></div>
       ${state.projects.map(p => { const s = new Date(p.startDate), e = new Date(p.endDate); const left = ((s - minDate) / totalSpan) * 100; const width = Math.max(4, ((e - s) / totalSpan) * 100); return `
-        <div class="timeline-row"><div><div style="font-weight:500;">${escapeHtml(p.name)}</div><span class="tag ${TEAM_CLASS[p.team] || ''}" style="margin-top:4px;">${p.team}</span></div>
+        <div class="timeline-row"><div><div style="font-weight:500;">${escapeHtml(p.name)}</div><span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}" style="margin-top:4px;">${p.team || "No business unit"}</span></div>
         <div class="timeline-track"><div class="timeline-bar" style="left:${left}%; width:${width}%; background:${statusColor[p.status]};">${p.status}</div></div></div>`; }).join("")}
     </div>`;
   }
@@ -1336,7 +1343,7 @@
     el("#team-filter-wrap").style.display = "none";
     content().innerHTML = `<div>
       <div class="panel"><h3>Staff (${state.people.length})</h3>
-        ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}<span class="tag ${TEAM_CLASS[p.team] || ''}" style="margin-left:6px;">${p.team||'—'}</span></span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
+        ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}<span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}" style="margin-left:6px;">${p.team||'—'}</span></span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
       </div>
     </div>
     <div class="banner" style="margin-top:16px;"><span>◐</span><span>People appear here automatically the first time they sign in with their email — there's nothing to add manually.</span></div>`;
@@ -1352,7 +1359,7 @@
       <div class="projects-grid">
         ${shared.length ? shared.map(p => { const progress = projectProgress(p.id); return `
           <div class="project-card" data-id="${p.id}">
-            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div><div class="project-client">${escapeHtml(p.team || "")}</div></div><span class="tag ${TEAM_CLASS[p.team] || ''}">${p.team}</span></div>
+            <div class="project-card-top"><div><div class="project-name">${escapeHtml(p.name)}</div></div><span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}">${p.team === "Shared" ? "Shared" : (p.team || "No business unit")}</span></div>
             <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
             <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
             <div style="margin-top:8px;font-size:11px;color:var(--ink-faint);">${p.clientIds.length} client${p.clientIds.length===1?'':'s'} with access</div>
@@ -1477,7 +1484,7 @@
     wrap.innerHTML = ids.map(pid => {
       const p = projectById(pid);
       if (!p) return "";
-      return `<span class="tag ${TEAM_CLASS[p.team] || ''}" style="display:inline-flex;align-items:center;gap:5px;">${escapeHtml(p.name)}${ids.length > 1 ? `<button data-pid="${pid}" class="remove-project-btn" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button>` : ""}</span>`;
+      return `<span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}" style="display:inline-flex;align-items:center;gap:5px;">${escapeHtml(p.name)}${ids.length > 1 ? `<button data-pid="${pid}" class="remove-project-btn" style="border:none;background:none;cursor:pointer;color:inherit;font-size:12px;line-height:1;padding:0;">×</button>` : ""}</span>`;
     }).join("");
     wrap.querySelectorAll(".remove-project-btn").forEach(btn => btn.addEventListener("click", () => removeTaskFromProject(taskId, btn.dataset.pid)));
   }
@@ -1536,7 +1543,7 @@
             <select id="td-add-project" style="max-width:220px;"><option value="" selected disabled>+ Add to another project</option>${state.projects.filter(p => !task.projectIds.includes(p.id)).map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>
           </div></div>
           <div class="field-table-row"><span class="ft-label">Est. hours</span><input type="number" id="td-hours" min="0" value="${task.estimatedHours || 0}" /></div>
-          <div class="field-table-row"><span class="ft-label">Business unit</span><select id="td-bu"><option value="">From project</option>${["Education", "Planning Center", "Shared", "Delight", "Corporate"].map(b => `<option value="${b}" ${b === task.businessUnit ? "selected" : ""}>${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
+          <div class="field-table-row"><span class="ft-label">Business unit</span><select id="td-bu"><option value="">From project</option>${["Education", "Planning Center", "Corporate", "Shared"].map(b => `<option value="${b}" ${b === task.businessUnit ? "selected" : ""}>${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
           <div class="field-table-row" style="align-items:flex-start;"><span class="ft-label" style="padding-top:6px;">Dependencies</span><div>
             <div id="td-deps-list" class="chip-row"></div>
             <select id="td-add-dep" style="max-width:220px;"><option value="" selected disabled>+ Add dependency</option>${state.tasks.filter(t => t.id !== taskId).map(t => `<option value="${t.id}">${escapeHtml(t.title)}</option>`).join("")}</select>
@@ -1742,7 +1749,7 @@
       <div class="field"><label>Due date</label><input id="nt-due" type="date" /></div>
       <div class="field"><label>Status</label><select id="nt-status">${TASK_COLS.map(c => `<option value="${c.key}">${c.label}</option>`).join("")}</select></div>
       <div class="field"><label>Est. hours</label><input id="nt-hours" type="number" min="0" /></div>
-      <div class="field"><label>Business unit</label><select id="nt-bu"><option value="">From project</option>${["Education", "Planning Center", "Shared", "Delight", "Corporate"].map(b => `<option value="${b}">${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
+      <div class="field"><label>Business unit</label><select id="nt-bu"><option value="">From project</option>${["Education", "Planning Center", "Corporate", "Shared"].map(b => `<option value="${b}">${b === "Shared" ? "Shared (both units)" : b}</option>`).join("")}</select></div>
       <div class="field"><label>Description (optional)</label><textarea id="nt-desc" rows="3" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:8px 10px;background:var(--bg);resize:vertical;"></textarea></div>
       <div class="modal-actions"><button class="btn-ghost" id="nt-cancel">Cancel</button><button class="btn" id="nt-save">Create task</button></div>
     </div></div>`;
@@ -1769,7 +1776,7 @@
 
       <div class="section-label">Details</div>
       <div class="field"><label>Name</label><input id="ps-name" type="text" value="${escapeHtml(project.name)}" /></div>
-      <div class="field"><label>Team</label><select id="ps-team">${TEAMS.map(t => `<option ${t===project.team?'selected':''}>${t}</option>`).join("")}</select></div>
+      <div class="field"><label>Business unit</label><select id="ps-bu"><option value="">Choose…</option>${PROJECT_BUS.map(b => `<option value="${b}" ${b===project.businessUnit?'selected':''}>${buLabel(b)}</option>`).join("")}</select></div>
       <div class="field"><label>Status</label><select id="ps-status">${STATUSES.map(s => `<option ${s===project.status?'selected':''}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Start date</label><input id="ps-start" type="date" value="${project.startDate||''}" /></div>
       <div class="field"><label>Target end date</label><input id="ps-end" type="date" value="${project.endDate||''}" /></div>
@@ -1782,7 +1789,6 @@
       <div class="modal-actions" style="margin-bottom:14px;"><button class="btn" id="ps-save-budget" style="width:100%;">Save budget</button></div>
 
       <div class="section-label">Resourcing</div>
-      <div class="field"><label>Business unit served</label><select id="ps-bu"><option value="">Not a business unit campaign</option>${BUS.map(b => `<option ${b===project.businessUnit?'selected':''}>${b}</option>`).join("")}<option value="Shared" ${project.businessUnit==='Shared'?'selected':''}>Shared: Education + Planning Center</option></select></div>
       <div class="field"><label>Education budget (hours, shared campaigns)</label><input id="ps-budget-edu" type="number" min="0" value="${project.budgetEducation != null ? project.budgetEducation : ''}" /></div>
       <div class="field"><label>Planning Center budget (hours, shared campaigns)</label><input id="ps-budget-pc" type="number" min="0" value="${project.budgetPc != null ? project.budgetPc : ''}" /></div>
       <div class="field"><label>Planned hours</label><input id="ps-planned" type="number" min="0" value="${project.plannedHours != null ? project.plannedHours : ''}" /></div>
@@ -1805,7 +1811,7 @@
     el("#ps-close").addEventListener("click", () => root.innerHTML = "");
     el("#ps-save-details").addEventListener("click", () => {
       updateProjectField(projectId, {
-        name: el("#ps-name").value.trim() || project.name, team: el("#ps-team").value, client: project.client || "",
+        name: el("#ps-name").value.trim() || project.name, businessUnit: el("#ps-bu").value || null, client: project.client || "",
         status: el("#ps-status").value, startDate: el("#ps-start").value, endDate: el("#ps-end").value
       });
       root.innerHTML = "";
@@ -1873,8 +1879,7 @@
     const root = el("#modal-root");
     root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New project</h3>
       <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
-      <div class="field"><label>Team</label><select id="mp-team">${TEAMS.map(t => `<option>${t}</option>`).join("")}</select></div>
-      <div class="field"><label>Business unit served (Marketing campaigns)</label><select id="mp-bu"><option value="">None</option>${BUS.map(b => `<option>${b}</option>`).join("")}<option value="Shared">Shared: Education + Planning Center</option></select></div>
+      <div class="field"><label>Business unit</label><select id="mp-bu">${PROJECT_BUS.map(b => `<option value="${b}">${buLabel(b)}</option>`).join("")}</select></div>
       <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
       <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
       <div class="field"><label>Status</label><select id="mp-status">${STATUSES.map(s => `<option>${s}</option>`).join("")}</select></div>
@@ -1888,7 +1893,7 @@
       if (!name) return;
       const portfolioField = el("#mp-portfolio");
       addProject({
-        name, team: el("#mp-team").value, client: "",
+        name, client: "",
         startDate: el("#mp-start").value || new Date().toISOString().slice(0,10),
         endDate: el("#mp-end").value || new Date().toISOString().slice(0,10),
         status: el("#mp-status").value, visibleToClient: false, businessUnit: el("#mp-bu").value || null,
@@ -1901,9 +1906,9 @@
   // =========================================================
   // RESOURCING: time logging, BU meetings, planned vs actual
   // =========================================================
-  const BUS = ["Education", "Planning Center", "Delight", "Corporate"];
+  const BUS = BUSINESS_UNITS;
   const BU_TARGET = { "Education": 0.7, "Planning Center": 0.3 };
-  const BU_TAG = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Delight": "tag-team-delight", "Corporate": "tag-team-corporate" };
+  const BU_TAG = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Corporate": "tag-team-corporate" };
   const MEETING_SERIES = {
     "Education": { start: "2026-10-22", every: 14, with: "Carlos", how: "in person, 13:00" },
     "Planning Center": { start: "2026-10-22", every: 28, with: "JJ", how: "Google Meet, 16:00 Madrid / 10:00 Miami" }
@@ -2071,7 +2076,7 @@
     else await sb.from("time_entries").delete().eq("id", row.id);
     await loadTimeEntries();
   }
-  const buTagHtml = (bu) => bu === "Shared" ? `<span class="tag tag-team-marketing">Shared 70/30</span>` : `<span class="tag ${BU_TAG[bu] || ""}">${bu}</span>`;
+  const buTagHtml = (bu) => bu === "Shared" ? `<span class="tag tag-team-delight">Shared 70/30</span>` : `<span class="tag ${BU_TAG[bu] || ""}">${bu}</span>`;
   // Which unit a task's time goes to, or null if the person must choose
   function taskBu(task) {
     if (task && task.businessUnit) return task.businessUnit;
@@ -2512,7 +2517,7 @@
     const root = el("#modal-root");
     root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal" style="width:420px;"><h3>Add campaign</h3>
       <div class="field"><label for="cm-name">Campaign name</label><input id="cm-name" type="text" placeholder="e.g. Black Friday 2027 courses" /></div>
-      <div class="field"><label for="cm-bu">Business unit</label><select id="cm-bu">${BUS.map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select></div>
+      <div class="field"><label for="cm-bu">Business unit</label><select id="cm-bu">${PROJECT_BUS.map(b => `<option value="${b}" ${b === bu ? "selected" : ""}>${buLabel(b)}</option>`).join("")}</select></div>
       <div class="field"><label for="cm-hours">Planned hours</label><input id="cm-hours" type="number" min="0" step="1" /></div>
       <div class="field"><label for="cm-prio">Priority (1 is highest)</label><input id="cm-prio" type="number" min="1" /></div>
       <div class="field"><label for="cm-start">Start date</label><input id="cm-start" type="date" /></div>
