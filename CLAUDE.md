@@ -76,6 +76,7 @@ Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The bas
   - **Flags for Brendon** and **Team capacity** are admin only. Team capacity has the Counted switch, hours per day, holiday calendar, time off, bank holidays and the "Logged so far" check against hours available.
   - **Import workbook hours:** CSV or pasted rows from the old Marketing time log sheet. Duplicates are skipped.
 - **Shared campaign panel** on a Shared project's board (admin and directors): budget, own tasks, share of shared work, total and balance per unit, plus a check on what percentage of hours are shared, flagged above 30%.
+- **Light / dark mode:** a moon/sun button in the top-right corner of every page. The choice is saved in that browser (`localStorage` key `dsd-theme`) and applied by a small script in `<head>` before the page paints. With no saved choice, the app follows the computer's setting. Colours are CSS variables on `:root`, with dark values under `[data-theme="dark"]` and the system media query. Use `var(--on-accent)` for text on teal or coral fills, never `#fff`.
 - **Notifications:** assignments, mentions, limit alerts and work requests. Clicking a limit alert or a request opens Resourcing.
 
 ## Resourcing rules

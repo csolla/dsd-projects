@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DSD — Projects</title>
+<script>try { var t = localStorage.getItem("dsd-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,450;9..144,560&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -12,17 +13,17 @@
   :root {
     --bg: #FAF8F3; --panel: #FFFFFF; --ink: #1C2420; --ink-soft: #5C6660; --ink-faint: #93998F;
     --line: #E4DFD3; --teal: #2B5F5C; --teal-soft: #E4EEEC; --coral: #C97B63; --coral-soft: #F6E7E1;
-    --amber: #B9873E; --amber-soft: #F2E7D3; --sage: #5F8467; --sage-soft: #E4EBE1; --focus: #2B5F5C;
+    --amber: #B9873E; --amber-soft: #F2E7D3; --sage: #5F8467; --sage-soft: #E4EBE1; --focus: #2B5F5C; --on-accent: #FFFFFF; color-scheme: light;
   }
   :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
     --bg: #171B19; --panel: #1E2422; --ink: #EDEAE2; --ink-soft: #A9B0A9; --ink-faint: #6D746D;
     --line: #303934; --teal: #6FADA6; --teal-soft: #24322F; --coral: #E0987F; --coral-soft: #33251F;
-    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6;
+    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6; --on-accent: #12201D; color-scheme: dark;
   } }
   :root[data-theme="dark"] {
     --bg: #171B19; --panel: #1E2422; --ink: #EDEAE2; --ink-soft: #A9B0A9; --ink-faint: #6D746D;
     --line: #303934; --teal: #6FADA6; --teal-soft: #24322F; --coral: #E0987F; --coral-soft: #33251F;
-    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6;
+    --amber: #D6AE73; --amber-soft: #362C1C; --sage: #8FB595; --sage-soft: #263029; --focus: #6FADA6; --on-accent: #12201D; color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -72,7 +73,7 @@
   .notif-btn { display: flex; align-items: center; gap: 8px; width: 100%; border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 8px; cursor: pointer; color: var(--ink-soft); font-size: 12.5px; position: relative; }
   .notif-btn:hover { background: var(--teal-soft); color: var(--ink); }
   .notif-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-  .notif-badge { position: absolute; top: 4px; left: 20px; background: var(--coral); color: #fff; font-size: 9.5px; font-weight: 600; min-width: 15px; height: 15px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .notif-badge { position: absolute; top: 4px; left: 20px; background: var(--coral); color: var(--on-accent); font-size: 9.5px; font-weight: 600; min-width: 15px; height: 15px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
   .notif-panel { position: absolute; top: calc(100% + 8px); left: 0; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(20,24,22,0.14); max-height: 320px; overflow-y: auto; z-index: 45; }
   .notif-item { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--ink); }
   .notif-item:hover { background: var(--teal-soft); }
@@ -91,6 +92,10 @@
 
   .main { flex: 1; min-width: 0; }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 22px 32px 0 32px; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .theme-toggle { width: 34px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: var(--panel); color: var(--ink-soft); border-radius: 8px; cursor: pointer; }
+  .theme-toggle:hover { background: var(--teal-soft); color: var(--ink); }
+  .theme-toggle svg { width: 17px; height: 17px; }
   .page-title { font-size: 24px; }
   .page-sub { color: var(--ink-soft); font-size: 13px; margin-top: 3px; }
   .view-toggle { display: flex; gap: 8px; align-items: center; }
@@ -98,7 +103,7 @@
   .scope-btn:first-child { border-radius: 7px 0 0 7px; }
   .scope-btn:last-child { border-radius: 0 7px 7px 0; }
   .scope-btn + .scope-btn { border-left: none; }
-  .scope-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .scope-btn.active { background: var(--teal); color: var(--on-accent); border-color: var(--teal); }
   .content { padding: 20px 32px 48px 32px; }
   .banner { background: var(--amber-soft); border: 1px solid var(--amber); color: var(--ink); padding: 10px 14px; border-radius: 8px; font-size: 12.5px; margin-bottom: 20px; display: flex; gap: 8px; align-items: flex-start; }
   .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 24px; }
@@ -127,7 +132,7 @@
   .status-dot.launched { background: var(--sage); }
   .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
   select { border: 1px solid var(--line); background: var(--panel); border-radius: 7px; padding: 7px 10px; color: var(--ink); }
-  .btn { border: 1px solid var(--teal); background: var(--teal); color: #fff; padding: 8px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  .btn { border: 1px solid var(--teal); background: var(--teal); color: var(--on-accent); padding: 8px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; }
   .btn:hover { opacity: 0.92; }
   .btn-ghost { border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; }
   .btn-ghost:hover { background: var(--teal-soft); }
@@ -162,7 +167,7 @@
   .timeline-row { display: grid; grid-template-columns: 190px 1fr; gap: 14px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
   .timeline-row:last-child { border-bottom: none; }
   .timeline-track { position: relative; height: 22px; background: var(--bg); border-radius: 20px; }
-  .timeline-bar { position: absolute; top: 0; height: 100%; border-radius: 20px; display: flex; align-items: center; padding: 0 10px; font-size: 10.5px; color: #fff; white-space: nowrap; overflow: hidden; }
+  .timeline-bar { position: absolute; top: 0; height: 100%; border-radius: 20px; display: flex; align-items: center; padding: 0 10px; font-size: 10.5px; color: var(--on-accent); white-space: nowrap; overflow: hidden; }
   .axis-row { display: grid; grid-template-columns: 190px 1fr; margin-bottom: 8px; }
   .axis-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-faint); }
   .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-soft); background: none; border: none; cursor: pointer; font-size: 13px; margin-bottom: 10px; padding: 0; }
@@ -328,7 +333,10 @@
   <main class="main">
     <div class="topbar">
       <div><h1 class="page-title" id="page-title">Dashboard</h1><div class="page-sub" id="page-sub"></div></div>
-      <div class="view-toggle" id="team-filter-wrap" style="display:none;"></div>
+      <div class="topbar-right">
+        <div class="view-toggle" id="team-filter-wrap" style="display:none;"></div>
+        <button class="theme-toggle" id="theme-toggle"></button>
+      </div>
     </div>
     <div class="content" id="content"></div>
   </main>
@@ -501,6 +509,27 @@
   }
 
   el("#signout-btn").addEventListener("click", () => sb.auth.signOut());
+
+  // Light / dark switch. With no saved choice the app follows the computer's setting.
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  function currentTheme() { return document.documentElement.dataset.theme || (darkQuery.matches ? "dark" : "light"); }
+  function renderThemeToggle() {
+    const dark = currentTheme() === "dark";
+    const btn = el("#theme-toggle");
+    btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = dark
+      ? '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="3.4"/><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M4.7 15.3 6 14M14 6l1.3-1.3"/></svg>'
+      : '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M16 12.2A6.5 6.5 0 0 1 7.8 4a6.5 6.5 0 1 0 8.2 8.2Z"/></svg>';
+  }
+  el("#theme-toggle").addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("dsd-theme", next); } catch (e) {}
+    renderThemeToggle();
+  });
+  darkQuery.addEventListener("change", renderThemeToggle);
+  renderThemeToggle();
   el("#client-signout-btn").addEventListener("click", () => sb.auth.signOut());
 
   sb.auth.onAuthStateChange((event, session) => {
