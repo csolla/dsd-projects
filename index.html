@@ -2383,9 +2383,9 @@
     const date = state.resMeetingDate, today = todayIso();
     const months = limitMonths();
     if (!state.resMonth || !months.includes(state.resMonth)) state.resMonth = monthStart(today);
-    const month = state.resMonth, nm = nextMonth(month);
-    const per = { start: month, end: monthEnd(month), nextStart: nm, nextEnd: monthEnd(nm) };
-    const monthName = fmtMonth(month), nextName = fmtMonth(nm);
+    const month = state.resMonth, mEnd = monthEnd(month);
+    const monthName = fmtMonth(month);
+    const admin = me.isAdmin;
 
     el("#page-title").textContent = `Resourcing: ${bu}`;
     el("#page-sub").textContent = `Meeting with ${series.with}, ${fmtLong(date)}, ${series.how}`;
@@ -2393,184 +2393,140 @@
     wrap.style.display = "flex";
     const nextUp = defaultMeeting(bu);
     wrap.innerHTML = `
-      ${me.isAdmin ? `<select id="res-bu" aria-label="Business unit">${Object.keys(MEETING_SERIES).map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select>` : ""}
+      ${admin ? `<select id="res-bu" aria-label="Business unit">${Object.keys(MEETING_SERIES).map(b => `<option ${b === bu ? "selected" : ""}>${b}</option>`).join("")}</select>` : ""}
       <select id="res-month-top" aria-label="Month">${months.map(m => `<option value="${m}" ${m === month ? "selected" : ""}>${fmtMonth(m)}</option>`).join("")}</select>
-      <select id="res-date" aria-label="Meeting for notes" title="Which meeting's notes and actions to show">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>Notes: ${fmtShort(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
-      ${me.isAdmin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : `<button class="btn" id="res-request">Request work</button>`}`;
-    if (me.isAdmin) {
+      <select id="res-date" aria-label="Meeting for to-dos" title="Which meeting's to-dos to show">${schedule.map(d => `<option value="${d}" ${d === date ? "selected" : ""}>To-dos: ${fmtShort(d)}${d === nextUp ? " (next)" : d < today ? " (past)" : ""}</option>`).join("")}</select>
+      ${admin ? `<button class="btn-ghost" id="res-import">Import workbook hours</button>` : `<button class="btn" id="res-request">Request work</button>`}`;
+    if (admin) {
       wrap.querySelector("#res-bu").addEventListener("change", (e) => { state.resBu = e.target.value; state.resMeetingDate = null; render(); });
       wrap.querySelector("#res-import").addEventListener("click", openImportModal);
-    }
+    } else wrap.querySelector("#res-request").addEventListener("click", () => openRequestModal(bu));
     wrap.querySelector("#res-date").addEventListener("change", (e) => { state.resMeetingDate = e.target.value; render(); });
     wrap.querySelector("#res-month-top").addEventListener("change", (e) => { state.resMonth = e.target.value; render(); });
-    if (!me.isAdmin) wrap.querySelector("#res-request").addEventListener("click", () => openRequestModal(bu));
 
     const counted = countedIds();
     const members = buMembers(bu);
     const entriesBu = state.timeEntries.filter(e => counted.has(e.person_id) && members.includes(e.business_unit));
-    const inPeriod = (e) => e.entry_date >= per.start && e.entry_date <= per.end;
+    const inMonth = (e) => e.entry_date >= month && e.entry_date <= mEnd;
     const planOf = (p) => p.businessUnit === "Shared" ? (bu === "Education" ? p.budgetEducation : p.budgetPc) : p.plannedHours;
-    const campaigns = state.projects.filter(p => (members.includes(p.businessUnit) || p.businessUnit === "Shared") && p.unplannedStatus !== "declined")
-      .sort((a, b) => (a.priority || 999) - (b.priority || 999) || a.name.localeCompare(b.name));
-    const hoursOf = (pid, onlyPeriod) => entriesBu.filter(e => e.project_id === pid && (!onlyPeriod || inPeriod(e))).reduce((s, e) => s + Number(e.hours), 0);
+    const monthHours = (pid) => entriesBu.filter(e => e.project_id === pid && inMonth(e)).reduce((s, e) => s + Number(e.hours), 0);
+    const pending = (p) => p.isUnplanned && (!p.unplannedStatus || p.unplannedStatus === "logged");
+    const ofUnit = state.projects.filter(p => (members.includes(p.businessUnit) || p.businessUnit === "Shared") && p.unplannedStatus !== "declined");
+    const scheduled = ofUnit.filter(p => !pending(p));
 
-    // unlinked hours grouped by label
-    const unlinked = {};
-    entriesBu.filter(e => !e.project_id).forEach(e => {
-      const k = e.label || "(no description)";
-      unlinked[k] = unlinked[k] || { period: 0, all: 0 };
-      unlinked[k].all += Number(e.hours);
-      if (inPeriod(e)) unlinked[k].period += Number(e.hours);
-    });
-
-    const unplanned = state.projects.filter(p => members.includes(p.businessUnit) && p.isUnplanned)
+    // Campaigns planned for this month: dates overlap the month
+    const planned = scheduled.filter(p => (p.startDate || "") <= mEnd && (p.endDate || "9999") >= month)
+      .sort((a, b) => (a.startDate || "").localeCompare(b.startDate || "") || a.name.localeCompare(b.name));
+    // Unplanned requests still waiting for a decision (requested up to the end of this month)
+    const requests = ofUnit.filter(p => pending(p) && (!p.requestedOn || p.requestedOn <= mEnd))
       .sort((a, b) => (b.requestedOn || "").localeCompare(a.requestedOn || ""));
-    const pipeline = campaigns.filter(p => p.status !== "launched" && (p.status === "planning" || ((p.startDate || "") <= per.nextEnd && (p.endDate || "9999") >= per.nextStart)))
-      .sort((a, b) => (a.endDate || "").localeCompare(b.endDate || ""));
+    // Upcoming pipeline: scheduled to start after this month
+    const upcoming = scheduled.filter(p => p.startDate && p.startDate > mEnd)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate) || a.name.localeCompare(b.name));
 
+    // Imported hours not linked to a campaign yet
+    const unlinked = {};
+    entriesBu.filter(e => !e.project_id && inMonth(e)).forEach(e => {
+      const k = e.label || "(no description)";
+      unlinked[k] = (unlinked[k] || 0) + Number(e.hours);
+    });
+    const unlinkedKeys = Object.keys(unlinked);
+
+    // To-dos for the selected meeting, plus open ones from earlier meetings
     const meeting = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
-    const buMeetingIds = new Set(state.resMeetings.filter(m => m.business_unit === bu).map(m => m.id));
-    const items = meeting ? state.resItems.filter(i => i.meeting_id === meeting.id) : [];
-    const earlierMeetingIds = new Set(state.resMeetings.filter(m => m.business_unit === bu && m.scheduled_for < date).map(m => m.id));
-    const carried = state.resItems.filter(i => i.kind === "action" && !i.done && earlierMeetingIds.has(i.meeting_id));
-    const admin = me.isAdmin;
+    const todos = meeting ? state.resItems.filter(i => i.meeting_id === meeting.id) : [];
+    const earlierIds = new Set(state.resMeetings.filter(m => m.business_unit === bu && m.scheduled_for < date).map(m => m.id));
+    const carried = state.resItems.filter(i => !i.done && earlierIds.has(i.meeting_id));
+    const todoRow = (i, from) => `<div class="list-row">
+        <span><input type="checkbox" class="res-done" data-iid="${i.id}" ${i.done ? "checked" : ""} ${admin ? "" : "disabled"} aria-label="Done" style="width:auto;" />
+          <span style="${i.done ? "text-decoration:line-through;color:var(--ink-faint);" : ""}">${escapeHtml(i.text)}</span>${i.owner ? ` <span class="res-note">(${escapeHtml(i.owner)})</span>` : ""}</span>
+        <span>${from ? `<span class="res-note">from ${fmtShort(from)}</span>` : ""}${admin ? ` <button class="btn-text" data-idel="${i.id}">Remove</button>` : ""}</span>
+      </div>`;
 
-    const campaignRows = campaigns.map(p => {
-      const period = hoursOf(p.id, true), all = hoursOf(p.id, false);
+    const nameCell = (p) => `<a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.businessUnit === "Shared" ? ` <span class="tag tag-team-delight">Shared</span>` : ""}`;
+    const dates = (p) => p.startDate ? `${fmtShort(p.startDate)} to ${p.endDate ? fmtShort(p.endDate) : "?"}` : "No dates";
+    const planCell = (p) => {
       const plan = planOf(p);
-      const used = plan ? all / plan : null;
-      return `<tr>
-        <td>${admin ? `<input type="number" min="1" class="res-prio" data-pid="${p.id}" value="${p.priority || ""}" aria-label="Priority" style="width:52px;" />` : (p.priority || "")}</td>
-        <td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.isUnplanned ? ` <span class="tag tag-team-marketing">Unplanned</span>` : ""}${p.businessUnit === "Delight" ? ` <span class="tag tag-team-delight">Delight</span>` : ""}${p.businessUnit === "Shared" ? ` <span class="tag tag-team-marketing">Shared</span>` : ""}</td>
-        <td><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span></td>
-        <td class="num">${admin ? `<input type="number" min="0" step="1" class="res-plan" data-pid="${p.id}" value="${plan != null ? plan : ""}" data-shared="${p.businessUnit === "Shared" ? "1" : ""}" aria-label="Planned hours" />` : (plan != null ? fmtH(plan) : "Not set")}</td>
-        <td class="num">${fmtH(period)}</td>
-        <td class="num">${fmtH(all)}</td>
-        <td class="num ${used != null && used > 1 ? "res-flag-over" : ""}">${used == null ? "No plan" : pct(used)}</td>
-      </tr>`;
-    }).join("");
-    const unlinkedKeys = Object.keys(unlinked).filter(k => unlinked[k].all > 0);
-    const unlinkedRows = unlinkedKeys.map(k => `<tr>
-        <td></td><td class="res-note">${escapeHtml(k)}</td><td class="res-note">Not linked</td>
-        <td class="num">${admin ? `<select class="res-link" data-label="${escapeHtml(k)}" aria-label="Link to campaign" style="width:150px;text-align:left;"><option value="">Link to…</option>${campaigns.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>` : ""}</td>
-        <td class="num">${fmtH(unlinked[k].period)}</td><td class="num">${fmtH(unlinked[k].all)}</td><td></td></tr>`).join("");
+      return admin ? `<input type="number" min="0" step="1" class="res-plan" data-pid="${p.id}" value="${plan != null ? plan : ""}" data-shared="${p.businessUnit === "Shared" ? "1" : ""}" aria-label="Planned hours" />`
+        : (plan != null ? fmtH(plan) : "Not set");
+    };
 
     content().innerHTML = `
-      <div class="res-period">Figures for ${monthName}${month === monthStart(today) ? " (month to date)" : ""}. Notes and actions in section 5 are for the meeting on ${fmtLong(date)}.</div>
+      <div class="res-period">Figures for ${monthName}${month === monthStart(today) ? " (month to date)" : ""}. To-dos are for the meeting on ${fmtLong(date)}.</div>
       <div class="res-stack">
         ${limitPanelHtml()}
         ${trendPanelHtml()}
+
         <div class="panel">
-          <h3>1. Hours vs allocation <span class="res-note">5 min</span></h3>
-          <div id="res-alloc"><div class="res-note">Loading hours…</div></div>
+          <div class="section-label"><h3 style="margin:0;">Campaigns planned for ${monthName}</h3>${admin ? `<button class="btn-ghost" id="res-add-campaign">Add campaign</button>` : ""}</div>
+          ${planned.length || unlinkedKeys.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Campaign</th><th>Dates</th><th>Status</th><th class="num">Planned hours</th><th class="num">Hours this month</th></tr></thead>
+            <tbody>${planned.map(p => `<tr><td>${nameCell(p)}</td><td style="white-space:nowrap;">${dates(p)}</td>
+              <td><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span></td>
+              <td class="num">${planCell(p)}</td><td class="num">${fmtH(monthHours(p.id))}</td></tr>`).join("")}
+            ${unlinkedKeys.map(k => `<tr><td class="res-note">${escapeHtml(k)}</td><td class="res-note">Imported, not linked</td><td></td>
+              <td class="num">${admin ? `<select class="res-link" data-label="${escapeHtml(k)}" aria-label="Link to campaign" style="width:150px;text-align:left;"><option value="">Link to…</option>${scheduled.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("")}</select>` : ""}</td>
+              <td class="num">${fmtH(unlinked[k])}</td></tr>`).join("")}</tbody></table></div>`
+            : `<div class="empty-state">No ${bu} campaigns planned for ${monthName}.</div>`}
         </div>
 
         <div class="panel">
-          <div class="section-label"><h3 style="margin:0;">2. Campaigns: planned vs actual <span class="res-note">15 min</span></h3>${admin ? `<button class="btn-ghost" id="res-add-campaign">Add campaign</button>` : ""}</div>
-          ${campaigns.length || unlinkedKeys.length ? `<div class="table-scroll"><table class="res-table">
-            <thead><tr><th>Priority</th><th>Campaign</th><th>Status</th><th class="num">Planned</th><th class="num">This month</th><th class="num">To date</th><th class="num">Plan used</th></tr></thead>
-            <tbody>${campaignRows}${unlinkedRows}</tbody></table></div>`
-            : `<div class="empty-state">No ${bu} campaigns yet.${admin ? " Add the campaigns you agree with " + series.with + " to build the baseline." : ""}</div>`}
-          ${unlinkedKeys.length && admin ? `<div class="res-note" style="margin-top:8px;">Rows marked "Not linked" are imported hours. Linking one moves every entry with that description onto the campaign.</div>` : ""}
+          <h3>Unplanned requests</h3>
+          ${requests.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Request</th><th>Requested</th><th>Needed by</th><th>${admin ? "" : "Status"}</th></tr></thead>
+            <tbody>${requests.map(p => `<tr>
+              <td style="max-width:380px;">${nameCell(p)}${p.requestUrgent ? ` <span class="tag" style="background:var(--coral-soft);color:var(--coral);">Urgent</span>` : ""}${p.requestedOn && p.requestedOn < month ? ` <span class="tag tag-team-marketing">Carried over</span>` : ""}${p.requestDetails ? `<div class="res-note" style="margin-top:3px;white-space:pre-wrap;">${escapeHtml(p.requestDetails)}</div>` : ""}</td>
+              <td style="white-space:nowrap;">${p.requestedOn ? fmtShort(p.requestedOn) : "—"}${p.requestedBy ? `<div class="res-note">by ${escapeHtml((personById(p.requestedBy) || {}).name || "director")}</div>` : ""}</td>
+              <td style="white-space:nowrap;">${p.requestDeadline ? fmtShort(p.requestDeadline) : "—"}</td>
+              <td style="white-space:nowrap;text-align:right;">${admin ? `<button class="btn" data-accept="${p.id}" style="padding:5px 10px;">Add to pipeline</button> <button class="btn-ghost" data-decline="${p.id}" style="padding:5px 10px;">Decline</button>` : `<span class="res-note">Waiting for review</span>`}</td>
+            </tr>`).join("")}</tbody></table></div>`
+            : `<div class="empty-state">No requests waiting for a decision.${admin ? "" : " Use Request work at the top to ask Marketing for something new."}</div>`}
         </div>
 
         <div class="panel">
-          <h3>3. Unplanned requests <span class="res-note">10 min</span></h3>
-          ${unplanned.length ? `<div class="table-scroll"><table class="res-table">
-            <thead><tr><th>Request</th><th>Requested</th><th>Needed by</th><th>Status</th><th>Dropped to make room</th><th class="num">Hours to date</th></tr></thead>
-            <tbody>${unplanned.map(p => {
-              const isNew = p.requestedOn && p.requestedOn >= per.start && p.requestedOn <= per.end;
-              const swap = p.swappedFor && state.projects.find(x => x.id === p.swappedFor);
-              return `<tr>
-                <td style="max-width:340px;"><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a>${p.requestUrgent ? ` <span class="tag" style="background:var(--coral-soft);color:var(--coral);">Urgent</span>` : ""}${isNew ? ` <span class="tag tag-team-marketing">New this month</span>` : ""}${p.requestDetails ? `<div class="res-note" style="margin-top:3px;white-space:pre-wrap;">${escapeHtml(p.requestDetails)}</div>` : ""}</td>
-                <td style="white-space:nowrap;">${p.requestedOn ? fmtShort(p.requestedOn) : "—"}${p.requestedBy ? `<div class="res-note">by ${escapeHtml((personById(p.requestedBy) || {}).name || "director")}</div>` : ""}</td>
-                <td style="white-space:nowrap;">${p.requestDeadline ? fmtShort(p.requestDeadline) : "—"}</td>
-                <td>${admin ? `<select class="res-ustatus" data-pid="${p.id}" style="width:auto;text-align:left;">${Object.keys(UNPLANNED_LABEL).map(k => `<option value="${k}" ${k === (p.unplannedStatus || "logged") ? "selected" : ""}>${UNPLANNED_LABEL[k]}</option>`).join("")}</select>` : UNPLANNED_LABEL[p.unplannedStatus || "logged"]}</td>
-                <td>${admin && p.unplannedStatus === "urgent_swap" ? `<select class="res-swap" data-pid="${p.id}" style="width:auto;text-align:left;"><option value="">Choose…</option>${campaigns.filter(c => c.id !== p.id).map(c => `<option value="${c.id}" ${c.id === p.swappedFor ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}</select>` : (swap ? escapeHtml(swap.name) : "—")}</td>
-                <td class="num">${fmtH(hoursOf(p.id, false))}</td></tr>`;
-            }).join("")}</tbody></table></div>`
-            : `<div class="empty-state">No unplanned requests for ${bu}.${admin ? " Requests from " + series.with + " land here, or use Add campaign and tick Unplanned request." : " Use Request work at the top to ask Marketing for something new."}</div>`}
+          <h3>Upcoming pipeline</h3>
+          ${upcoming.length ? `<div class="table-scroll"><table class="res-table">
+            <thead><tr><th>Campaign</th><th>Starts</th><th>Ends</th><th class="num">Planned hours</th></tr></thead>
+            <tbody>${upcoming.map(p => `<tr><td>${nameCell(p)}</td><td style="white-space:nowrap;">${fmtShort(p.startDate)}</td><td style="white-space:nowrap;">${p.endDate ? fmtShort(p.endDate) : "—"}</td><td class="num">${planCell(p)}</td></tr>`).join("")}</tbody></table></div>`
+            : `<div class="empty-state">Nothing scheduled after ${monthName} yet.</div>`}
         </div>
 
         <div class="panel">
-          <h3>4. Next month pipeline: ${nextName} <span class="res-note">10 min</span></h3>
-          ${pipeline.length ? `<div class="table-scroll"><table class="res-table">
-            <thead><tr><th>Campaign</th><th>Dates</th><th class="num">Planned hours left</th></tr></thead>
-            <tbody>${pipeline.map(p => `<tr><td><a href="#" data-open="${p.id}">${escapeHtml(p.name)}</a></td><td>${fmtShort(p.startDate)} to ${fmtShort(p.endDate)}</td><td class="num">${planOf(p) != null ? fmtH(Math.max(0, planOf(p) - hoursOf(p.id, false))) : "No plan"}</td></tr>`).join("")}</tbody></table></div>
-            <div class="res-note" id="res-capacity" style="margin-top:10px;"></div>`
-            : `<div class="empty-state">Nothing scheduled for ${nextName}.</div>`}
+          <h3>To-dos: meeting on ${fmtShort(date)}</h3>
+          ${todos.length ? todos.map(i => todoRow(i)).join("") : `<div class="res-note" style="margin-bottom:8px;">No to-dos for this meeting yet.</div>`}
+          ${admin ? `<div class="inline-form" style="margin-top:10px;">
+            <input type="text" id="ri-text" placeholder="Add a to-do" style="flex:1;min-width:220px;" aria-label="To-do" />
+            <input type="text" id="ri-owner" placeholder="Owner (optional)" style="width:150px;" aria-label="Owner" />
+            <button class="btn-ghost" id="ri-add">Add</button></div>` : ""}
+          ${carried.length ? `<div class="section-label" style="margin-top:18px;">Still open from earlier meetings</div>${carried.map(i => todoRow(i, (state.resMeetings.find(m => m.id === i.meeting_id) || {}).scheduled_for)).join("")}` : ""}
         </div>
 
-        <div class="panel">
-          <h3>5. Decisions and actions: meeting on ${fmtShort(date)} <span class="res-note">5 min</span></h3>
-          ${meeting ? `
-            ${admin ? `<div class="field"><label for="res-notes">Notes</label><textarea id="res-notes" rows="4" class="res-textarea">${escapeHtml(meeting.notes || "")}</textarea></div>`
-              : (meeting.notes ? `<div class="res-notes-read">${escapeHtml(meeting.notes)}</div>` : "")}
-            ${items.length ? items.map(i => `<div class="list-row">
-              <span>${i.kind === "action" ? `<input type="checkbox" class="res-done" data-iid="${i.id}" ${i.done ? "checked" : ""} ${admin ? "" : "disabled"} aria-label="Done" /> ` : ""}<strong style="font-weight:500;">${i.kind === "decision" ? "Decision" : "Action"}:</strong> ${escapeHtml(i.text)}${i.owner ? ` <span class="res-note">(${escapeHtml(i.owner)}${i.due_date ? ", " + fmtShort(i.due_date) : ""})</span>` : ""}</span>
-              ${admin ? `<button class="btn-text" data-idel="${i.id}">Remove</button>` : ""}</div>`).join("") : `<div class="res-note" style="margin-bottom:8px;">No decisions or actions recorded yet.</div>`}
-            ${admin ? `<div class="inline-form" style="margin-top:10px;">
-              <select id="ri-kind" aria-label="Type"><option value="decision">Decision</option><option value="action">Action</option></select>
-              <input type="text" id="ri-text" placeholder="What was decided or needs doing" style="flex:1;min-width:200px;" aria-label="Text" />
-              <input type="text" id="ri-owner" placeholder="Owner" style="width:110px;" aria-label="Owner" />
-              <input type="date" id="ri-due" aria-label="Due date" />
-              <button class="btn-ghost" id="ri-add">Add</button></div>` : ""}`
-            : admin ? `<button class="btn" id="res-start-notes">Start notes for this meeting</button>` : `<div class="res-note">No notes recorded for this meeting yet.</div>`}
-          ${carried.length ? `<div class="section-label" style="margin-top:18px;">Open actions from earlier meetings</div>${carried.map(i => {
-            const m = state.resMeetings.find(m => m.id === i.meeting_id);
-            return `<div class="list-row"><span><input type="checkbox" class="res-done" data-iid="${i.id}" ${admin ? "" : "disabled"} aria-label="Done" /> ${escapeHtml(i.text)}${i.owner ? ` <span class="res-note">(${escapeHtml(i.owner)})</span>` : ""}</span><span class="res-note">from ${m ? fmtShort(m.scheduled_for) : "earlier"}</span></div>`;
-          }).join("")}` : ""}
-        </div>
-
-        ${admin ? renderFlagsPanel(bu, meeting) : ""}
         ${admin ? capacityPanelHtml() : ""}
       </div>`;
-
-    // allocation (async totals via secure function)
-    fetchTotals(per.start, per.end).then(t => {
-      const box = el("#res-alloc");
-      if (!box) return;
-      const total = t.Total || 0;
-      const rows = (admin ? ["Education", "Planning Center", "Corporate"] : [bu]).map(b => {
-        const h = t[b] || 0, share = total ? h / total : 0, target = BU_TARGET[b];
-        let verdict = "";
-        if (target != null && total) {
-          const diff = Math.round((share - target) * 100);
-          verdict = Math.abs(diff) <= 5 ? "On target" : diff < 0 ? `${-diff} points under target` : `${diff} points over target`;
-        } else if (b === "Corporate" && total) verdict = "No target, counts against both units";
-        return `<div class="alloc-row">
-          <div><span class="tag ${BU_TAG[b]}">${b}</span></div>
-          <div><div class="alloc-bar"><div class="alloc-fill" style="width:${Math.min(100, share * 100)}%;background:${b === "Education" ? "var(--teal)" : b === "Planning Center" ? "var(--coral)" : "var(--ink-faint)"};"></div>${target != null ? `<div class="alloc-target" style="left:${target * 100}%;" title="Target ${pct(target)}"></div>` : ""}</div>
-            <div class="res-note" style="margin-top:4px;">${verdict}</div></div>
-          <div style="text-align:right;"><span class="alloc-num">${total ? pct(share) : "—"}</span> <span class="res-note">${fmtH(h)}${target != null ? `, target ${pct(target)}` : ""}</span></div>
-        </div>`;
-      }).join("");
-      box.innerHTML = total ? rows + `<div class="res-note" style="margin-top:10px;">Marketing total for ${monthName}: ${fmtH(total)} (Marita, Daisy and Steph). The line on each bar marks the target.</div>`
-        : `<div class="res-note">No hours logged in ${monthName} yet.</div>`;
-    });
-    const capBox = el("#res-capacity");
-    if (capBox && BU_TARGET[bu] != null) {
-      fetchCapacity(nm).then(cap => {
-        if (!el("#res-capacity")) return;
-        el("#res-capacity").textContent = cap ? `${bu} limit for ${nextName}: ${fmtH(cap * BU_TARGET[bu])}. Compare it with the planned hours left above to see if the work fits.` : `No capacity set for ${nextName} yet.`;
-      });
-    }
 
     fillLimitPanel(bu);
     fillTrendPanel(bu);
 
     // events
     content().querySelectorAll("[data-open]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.selectedProjectId = a.dataset.open; render(); }));
-    if (!admin) {
-      return;
-    }
+    if (!admin) return;
     content().querySelectorAll(".res-plan").forEach(inp => inp.addEventListener("change", () => {
       const v = inp.value === "" ? null : Number(inp.value);
       updateProjectField(inp.dataset.pid, inp.dataset.shared ? (bu === "Education" ? { budgetEducation: v } : { budgetPc: v }) : { plannedHours: v });
     }));
-    content().querySelectorAll(".res-prio").forEach(inp => inp.addEventListener("change", () => updateProjectField(inp.dataset.pid, { priority: inp.value === "" ? null : Number(inp.value) })));
-    content().querySelectorAll(".res-ustatus").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { unplannedStatus: s.value, ...(s.value !== "urgent_swap" ? { swappedFor: null } : {}) })));
-    content().querySelectorAll(".res-swap").forEach(s => s.addEventListener("change", () => updateProjectField(s.dataset.pid, { swappedFor: s.value || null })));
+    content().querySelectorAll("[data-accept]").forEach(b => b.addEventListener("click", async () => {
+      const p = state.projects.find(x => x.id === b.dataset.accept);
+      if (p) p.unplannedStatus = "accepted";
+      await updateProjectField(b.dataset.accept, { unplannedStatus: "accepted" });
+      render();
+    }));
+    content().querySelectorAll("[data-decline]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("Decline this request? It will be removed from the list.")) return;
+      const p = state.projects.find(x => x.id === b.dataset.decline);
+      if (p) p.unplannedStatus = "declined";
+      await updateProjectField(b.dataset.decline, { unplannedStatus: "declined" });
+      render();
+    }));
     content().querySelectorAll(".res-link").forEach(s => s.addEventListener("change", async () => {
       if (!s.value) return;
       const label = s.dataset.label === "(no description)" ? null : s.dataset.label;
@@ -2581,24 +2537,19 @@
     }));
     const addBtn = el("#res-add-campaign");
     if (addBtn) addBtn.addEventListener("click", () => openCampaignModal(bu));
-    const startBtn = el("#res-start-notes");
-    if (startBtn) startBtn.addEventListener("click", async () => { await ensureMeeting(bu, date); render(); });
-    const notes = el("#res-notes");
-    if (notes) notes.addEventListener("blur", async () => {
-      if (notes.value === (meeting.notes || "")) return;
-      meeting.notes = notes.value;
-      await sb.from("resourcing_meetings").update({ notes: notes.value, updated_at: new Date().toISOString() }).eq("id", meeting.id);
-    });
-    const riAdd = el("#ri-add");
-    if (riAdd) riAdd.addEventListener("click", async () => {
+    const addTodo = async () => {
       const text = el("#ri-text").value.trim();
       if (!text) return;
-      await sb.from("resourcing_items").insert({ meeting_id: meeting.id, kind: el("#ri-kind").value, text, owner: el("#ri-owner").value.trim() || null, due_date: el("#ri-due").value || null });
+      const m = await ensureMeeting(bu, date);
+      if (!m) { alert("Couldn't save the to-do. Try again."); return; }
+      await sb.from("resourcing_items").insert({ meeting_id: m.id, kind: "action", text, owner: el("#ri-owner").value.trim() || null });
       await loadResourcingMeta(); render();
-    });
+      const box = el("#ri-text"); if (box) box.focus();
+    };
+    el("#ri-add").addEventListener("click", addTodo);
+    el("#ri-text").addEventListener("keydown", (e) => { if (e.key === "Enter") addTodo(); });
     content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => { await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid); await loadResourcingMeta(); render(); }));
-    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this item?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
-    bindFlagsPanel(bu, date);
+    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this to-do?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
     bindCapacityPanel();
   }
 
