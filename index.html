@@ -794,7 +794,18 @@
     const payload = {};
     Object.keys(fields).forEach(k => { payload[map[k] || k] = fields[k]; });
     if ("businessUnit" in fields) payload.team = fields.businessUnit || "";
-    await sb.from("projects").update(payload).eq("id", projectId);
+    // An empty date box means "no date": the database needs null, not ""
+    ["start_date", "end_date", "requested_on", "request_deadline"].forEach(k => { if (payload[k] === "") payload[k] = null; });
+    const { error } = await sb.from("projects").update(payload).eq("id", projectId);
+    if (error) { alert("Couldn't save the project: " + error.message); return false; }
+    // Show the change straight away instead of waiting for the live refresh
+    const p = state.projects.find(x => x.id === projectId);
+    if (p) {
+      Object.keys(fields).forEach(k => { p[k] = (k === "startDate" || k === "endDate") && fields[k] === "" ? null : fields[k]; });
+      if ("businessUnit" in fields) p.team = fields.businessUnit || null;
+      render();
+    }
+    return true;
   }
   async function deleteProject(projectId) { await sb.from("projects").delete().eq("id", projectId); }
   async function deleteTask(taskId) { await sb.from("tasks").delete().eq("id", taskId); }
