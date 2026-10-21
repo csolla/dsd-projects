@@ -1205,8 +1205,12 @@
     wrap.querySelector("#new-project-btn").addEventListener("click", openNewProjectModal);
 
     const filtered = state.projects.filter(p => state.teamFilter === "all" || (state.teamFilter === "none" ? !p.team : p.team === state.teamFilter));
-    content().innerHTML = `<div class="projects-grid">
-      ${filtered.length ? filtered.map(p => {
+    // Sections by business unit, each ordered by end date (soonest first, no date last)
+    const sectionOrder = ["Education", "Planning Center", "Corporate", "Shared", null];
+    const sectionTitle = (k) => k === null ? "No business unit" : k === "Shared" ? "Shared campaigns" : k;
+    const byDeadline = (a, b) => (a.endDate || "9999").localeCompare(b.endDate || "9999") || a.name.localeCompare(b.name);
+    const sections = sectionOrder.map(k => ({ k, list: filtered.filter(p => (p.team || null) === k).sort(byDeadline) })).filter(x => x.list.length);
+    const cardHtml = (p) => {
         const progress = projectProgress(p.id);
         return `
         <div class="project-card" data-id="${p.id}">
@@ -1222,8 +1226,12 @@
             ${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).length ? `<select class="add-to-portfolio-inline" data-pid="${p.id}" style="font-size:11.5px;max-width:100%;"><option value="" selected disabled>+ Add to portfolio</option>${state.portfolios.filter(f => !p.portfolioIds.includes(f.id)).map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join("")}</select>` : ""}
           </div>
         </div>`;
-      }).join("") : `<div class="empty-state">No projects yet for this filter.</div>`}
-    </div>`;
+    };
+    content().innerHTML = sections.length ? sections.map(sec => `
+      <div class="projects-section" style="margin-bottom:28px;">
+        <div class="section-label" style="margin-bottom:10px;"><h3 style="margin:0;font-size:17px;display:flex;align-items:baseline;gap:10px;">${sectionTitle(sec.k)}<span class="res-note" style="font-family:inherit;">${sec.list.length} project${sec.list.length === 1 ? "" : "s"} · by deadline</span></h3></div>
+        <div class="projects-grid">${sec.list.map(cardHtml).join("")}</div>
+      </div>`).join("") : `<div class="empty-state">No projects yet for this filter.</div>`;
     content().querySelectorAll(".add-to-portfolio-inline").forEach(sel => {
       sel.addEventListener("click", (e) => e.stopPropagation());
       sel.addEventListener("change", (e) => { e.stopPropagation(); if (e.target.value) addProjectToPortfolio(e.target.dataset.pid, e.target.value); });
