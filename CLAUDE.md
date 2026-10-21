@@ -14,7 +14,7 @@ Context for Claude Code. This file summarises how the tool is built, the decisio
 - **Frontend:** a single file, `index.html` (HTML, CSS and vanilla JS in one IIFE), in the repo `csolla/dsd-projects`, served by GitHub Pages at https://csolla.github.io/dsd-projects/
 - **Backend:** Supabase (`https://yxevnyyzezfdsbclhvvp.supabase.co`), with Row Level Security on and Realtime subscriptions. The client is loaded from the jsDelivr CDN (`@supabase/supabase-js@2`).
 - **Auth:** magic link by email, with no passwords. Only `@digitalsmiledesign.com` emails can create an account (migration 12, plus a check on the login screen), and they become `role = 'staff'`. The app still has a "staff only" screen for any non-staff profile, but none existed when sign-ups were locked.
-- **Deploying:** until now Carlota pasted the full `index.html` into GitHub's web editor and committed it, then did a hard refresh (Cmd+Shift+R). With Claude Code, commit and push directly instead.
+- **Deploying:** commit and push from Claude Code, then Carlota does a hard refresh (Cmd+Shift+R). Carlota sometimes also edits `index.html` through GitHub's web editor with help from another Claude chat, so **always `git pull` before starting any change**.
 - **SQL:** migrations are run by hand in the Supabase SQL editor, each as a new query. When giving Carlota SQL, give only the code block. She once pasted a whole explanation into the editor by mistake. Copying long SQL from the Claude Code terminal can drop text, so write it to a file in `supabase/migrations/`, put it on her clipboard with `pbcopy`, and have her paste it with Cmd+A then Cmd+V.
 - **Security checks:** the Supabase "public" (anon) key in `index.html` is meant to be public. Access is enforced by Row Level Security. To test what an anonymous visitor sees, query `/rest/v1/<table>` with only that key, and count rows rather than printing data.
 - **Claude Artifacts can't call Supabase.** Their content-security policy blocks it, so the tool must stay externally hosted.
@@ -64,17 +64,17 @@ Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The bas
 - **My tasks:** every task assigned to you, grouped Overdue, Today, This week, Later and No date. Done tasks are hidden unless you tick the toggle. You can tick a task done or change its status inline, and clicking a row opens the task panel.
 - **My time:** each person logs hours by week, against a project, an optional task and a business unit. The unit comes from the task's tag, or from the project unless the project is Shared. Time can also be logged from inside the task panel.
 - **Team time** (admin only, at the bottom of My time, `renderTeamTime()`): a Week / Month switch and a person filter ("Everybody" by default). Week mode follows the page's week buttons and shows hours per day (weekend columns only when someone logged weekend time). Month mode has its own ‹ › arrows and shows hours per week of the month. People listed are everyone who has ever logged time plus everyone counted in capacity. Picking one person adds their entries with unit chips below the grid.
-- **Resourcing,** visible to the admin and the two directors:
-  - A month picker at the top drives every figure. The meeting picker only selects which meeting's notes appear in section 5.
+- **Resourcing,** visible to the admin and the two directors (simplified 21 October 2026):
+  - A month picker at the top drives every figure. The "To-dos" meeting picker only selects which meeting's to-dos appear.
   - **Monthly limit:** used vs limit per unit, with "Within limit", "Warning: over 80%" or "Limit reached".
   - **Month by month:** a bar chart of hours used per month, with dashed lines marking each unit's limit.
-  - **1. Hours vs allocation:** the share of logged hours per unit against the 70/30 target, with Corporate shown separately.
-  - **2. Campaigns, planned vs actual:** planned hours, this month, to date, and how much of the plan is used. Imported hours that aren't linked to a campaign can be linked from here.
-  - **3. Unplanned requests:** includes requests directors submit through the **Request work** button.
-  - **4. Next month pipeline:** includes next month's limit for the unit.
-  - **5. Decisions and actions:** notes per meeting, with open actions carrying over.
-  - **Flags for Brendon** and **Team capacity** are admin only. Team capacity has the Counted switch, hours per day, holiday calendar, time off, bank holidays and the "Logged so far" check against hours available.
+  - **Campaigns planned for <month>:** the unit's scheduled campaigns whose dates overlap the month, with planned hours (editable by the admin) and hours this month. Imported hours that aren't linked to a campaign can be linked from here.
+  - **Unplanned requests:** requests still waiting for a decision (including ones directors submit through **Request work**). The admin can **Add to pipeline** or **Decline**.
+  - **Upcoming pipeline:** scheduled campaigns that start after the selected month.
+  - **To-dos:** a simple list per meeting (text plus optional owner), stored in `resourcing_items` with `kind = 'action'`. Open to-dos from earlier meetings carry over. A failed save shows an alert.
+  - **Team capacity** (admin only): the Counted switch, hours per day, holiday calendar, time off, bank holidays and the "Logged so far" check against hours available.
   - **Import workbook hours:** CSV or pasted rows from the old Marketing time log sheet. Duplicates are skipped.
+  - Removed in the simplification: "Hours vs allocation" and "Flags for Brendon". The `resourcing_flags` table and `renderFlagsPanel()` still exist but aren't shown.
 - **Shared campaign panel** on a Shared project's board (admin and directors): budget, own tasks, share of shared work, total and balance per unit, plus a check on what percentage of hours are shared, flagged above 30%.
 - **Light / dark mode:** a moon/sun button in the top-right corner of every page. The choice is saved in that browser (`localStorage` key `dsd-theme`) and applied by a small script in `<head>` before the page paints. With no saved choice, the app follows the computer's setting. Colours are CSS variables on `:root`, with dark values under `[data-theme="dark"]` and the system media query. Use `var(--on-accent)` for text on teal or coral fills, never `#fff`.
 - **Notifications:** assignments, mentions, limit alerts and work requests. Clicking a limit alert or a request opens Resourcing.
