@@ -1,4 +1,4 @@
-# DSD Projects: project management tool
+# DSD Atlas: project management tool
 
 Context for Claude Code. This file summarises how the tool is built, the decisions behind it and how Carlota likes to work, so a new session can pick up without re-explaining. Last updated: 20 October 2026.
 
@@ -6,7 +6,7 @@ Context for Claude Code. This file summarises how the tool is built, the decisio
 
 - **Owner and sole admin:** Carlota (csolla@digitalsmiledesign.com), project manager at Digital Smile Design (DSD), Madrid HQ. She also leads the Marketing team.
 - **DSD:** a dental-industry company (cosmetic and restorative dentistry, treatment planning, dentist education), founded by Christian Coachman. About 68 staff.
-- **The tool:** a custom project management app replacing Asana for all DSD staff. One URL, individual logins, live updates for everyone.
+- **The tool:** **DSD Atlas** (named 22 October 2026; the repo and URL still say `dsd-projects`), a custom project management app replacing Asana for all DSD staff. One URL, individual logins, live updates for everyone.
 - **Marketing team:** Marita, Daisy, Steph, Carlota. Their profile names in Supabase were created from email usernames (`mmacdona…`, `dmason…`, `swrennall…`). Match people by **email**, never by name.
 
 ## Stack and deployment
