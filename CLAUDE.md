@@ -46,6 +46,7 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
    - replaces "profiles viewable by signed-in users" with "profiles viewable by staff or self", using the new security definer helper `i_am_staff()`, so outsiders can't see the staff list
 7. `11_remove_client_project_access.sql` (run 20 October 2026) drops the "clients view shared projects" policy on `projects`, so clients see no projects at all. `share_with_client` and `project_clients` are kept, so client sharing can be restored by recreating the policy.
 8. `12_dsd_emails_only.sql` (run 20 October 2026) makes `handle_new_user()` raise an exception for any email not ending in `@digitalsmiledesign.com`, so the account is never created and no link is sent. To let an outsider in again (a freelancer, say), this function needs changing.
+9. `13_operational_column.sql` adds the task status `operational` (the "Operational" board column). Every project gets a "Meetings" task there (trigger `project_meetings_task` on insert; `project_meetings_task_bu` keeps its business unit in step with the project). `project_progress` ignores operational tasks, and the app leaves them out of overdue, due-this-week, unassigned and workload counts.
 
 Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The base schema (01–04) isn't in the repo.
 

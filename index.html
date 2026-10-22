@@ -147,7 +147,7 @@
   .progress-bar { height: 5px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 12px 0 8px 0; }
   .progress-fill { height: 100%; background: var(--teal); border-radius: 4px; }
   .project-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-faint); }
-  .board-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .board-cols { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
   .board-col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-height: 120px; transition: background-color .12s, border-color .12s; }
   .board-col.drag-over { background: var(--teal-soft); border-color: var(--teal); }
   .task-card { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; margin-bottom: 8px; font-size: 12.5px; cursor: grab; }
@@ -323,6 +323,7 @@
           <option value="doing">In progress</option>
           <option value="review">Review</option>
           <option value="done">Done</option>
+          <option value="operational">Operational</option>
         </select>
         <select id="sf-assignee"><option value="all">All people</option></select>
       </div>
@@ -389,8 +390,8 @@
   const buLabel = (b) => b === "Shared" ? "Shared: Education + Planning Center" : b;
   const TEAM_CLASS = { "Education": "tag-team-education", "Planning Center": "tag-team-planning", "Marketing": "tag-team-marketing", "Corporate": "tag-team-corporate", "Shared": "tag-team-delight" };
   const STATUSES = ["planning", "active", "review", "launched"];
-  const TASK_COLS = [{ key: "todo", label: "To do" }, { key: "doing", label: "In progress" }, { key: "review", label: "Review" }, { key: "done", label: "Done" }];
-  const STATUS_LABEL = { todo: "To do", doing: "In progress", review: "Review", done: "Done" };
+  const TASK_COLS = [{ key: "todo", label: "To do" }, { key: "doing", label: "In progress" }, { key: "review", label: "Review" }, { key: "done", label: "Done" }, { key: "operational", label: "Operational" }];
+  const STATUS_LABEL = { todo: "To do", doing: "In progress", review: "Review", done: "Done", operational: "Operational" };
 
   let me = null; // { id, email, name, team, role }
   let bootedUserId = null; // guards against re-booting on token-refresh SIGNED_IN events
@@ -415,11 +416,11 @@
     return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
   function isOverdue(dueDate, status) {
-    if (status === "done" || !dueDate) return false;
+    if (status === "done" || status === "operational" || !dueDate) return false;
     return new Date(dueDate + "T00:00:00") < new Date(new Date().toDateString());
   }
   function dueDateClass(dueDate, status) {
-    if (!dueDate || status === "done") return "";
+    if (!dueDate || status === "done" || status === "operational") return "";
     const today = new Date(new Date().toDateString());
     const due = new Date(dueDate + "T00:00:00");
     const weekAhead = new Date(today); weekAhead.setDate(today.getDate() + 7);
@@ -1093,26 +1094,26 @@
         || state.tasks.some(t => t.projectIds.includes(p.id) && (() => { const a = personByName(t.assignee); return a && a.team === dt; })()));
       tasks = state.tasks.filter(t => { const p = personByName(t.assignee); return p && p.team === state.dashboardTeam; });
       subtasksForWorkload = state.openSubtasks.filter(s => { const p = personById(s.assignee_id); return p && p.team === state.dashboardTeam; });
-      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.projectIds.some(pid => { const proj = projectById(pid); return proj && projects.includes(proj); }));
+      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.status !== "operational" && t.projectIds.some(pid => { const proj = projectById(pid); return proj && projects.includes(proj); }));
     } else if (scope === "me") {
       tasks = state.tasks.filter(t => t.assignee === me.name);
       const myProjectIds = new Set(tasks.flatMap(t => t.projectIds));
       projects = state.projects.filter(p => myProjectIds.has(p.id));
       subtasksForWorkload = state.openSubtasks.filter(s => s.assignee_id === me.id);
     } else {
-      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done");
+      unassignedTasks = state.tasks.filter(t => !t.assignee && t.status !== "done" && t.status !== "operational");
     }
 
     const activeProjects = projects.filter(p => p.status !== "launched");
     const now = new Date(); now.setHours(0,0,0,0);
     const weekAhead = new Date(now); weekAhead.setDate(now.getDate() + 7);
     const twoWeeksAhead = new Date(now); twoWeeksAhead.setDate(now.getDate() + 14);
-    const dueThisWeek = tasks.filter(t => t.status !== "done" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
+    const dueThisWeek = tasks.filter(t => t.status !== "done" && t.status !== "operational" && t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead);
     const overdue = tasks.filter(t => isOverdue(t.dueDate, t.status));
     const overallProgress = projects.length ? Math.round(projects.reduce((sum, p) => sum + projectProgress(p.id), 0) / projects.length) : 0;
 
     const workload = {};
-    tasks.filter(t => t.status !== "done").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
+    tasks.filter(t => t.status !== "done" && t.status !== "operational").forEach(t => { const name = t.assignee || "Unassigned"; workload[name] = (workload[name] || 0) + (Number(t.estimatedHours) || 0); });
     subtasksForWorkload.forEach(s => { const name = s.assignee_id ? ((personById(s.assignee_id) || {}).name || "Unassigned") : "Unassigned"; workload[name] = (workload[name] || 0) + (Number(s.estimated_hours) || 0); });
     const workloadRows = Object.entries(workload).sort((a,b) => b[1]-a[1]).slice(0, 6);
     const pastDeadlines = overdue.slice().sort((a,b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 6);
