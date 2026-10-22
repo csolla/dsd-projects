@@ -2097,7 +2097,8 @@
   async function ensureMeeting(bu, date) {
     let m = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
     if (m) return m;
-    const { data } = await sb.from("resourcing_meetings").insert({ business_unit: bu, scheduled_for: date, held_on: date }).select().single();
+    const { data, error } = await sb.from("resourcing_meetings").insert({ business_unit: bu, scheduled_for: date, held_on: date }).select().single();
+    if (error) console.error("Couldn't create meeting", error);
     if (data) state.resMeetings.push(data);
     return data;
   }
@@ -2561,14 +2562,24 @@
       if (!text) return;
       const m = await ensureMeeting(bu, date);
       if (!m) { alert("Couldn't save the to-do. Try again."); return; }
-      await sb.from("resourcing_items").insert({ meeting_id: m.id, kind: "action", text, owner: el("#ri-owner").value.trim() || null });
+      const { error } = await sb.from("resourcing_items").insert({ meeting_id: m.id, kind: "action", text, owner: el("#ri-owner").value.trim() || null });
+      if (error) { alert("Couldn't save the to-do: " + error.message); return; }
       await loadResourcingMeta(); render();
       const box = el("#ri-text"); if (box) box.focus();
     };
     el("#ri-add").addEventListener("click", addTodo);
     el("#ri-text").addEventListener("keydown", (e) => { if (e.key === "Enter") addTodo(); });
-    content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => { await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid); await loadResourcingMeta(); render(); }));
-    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this to-do?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
+    content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => {
+      const { error } = await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid);
+      if (error) alert("Couldn't update the to-do: " + error.message);
+      await loadResourcingMeta(); render();
+    }));
+    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm("Remove this to-do?")) return;
+      const { error } = await sb.from("resourcing_items").delete().eq("id", b.dataset.idel);
+      if (error) alert("Couldn't remove the to-do: " + error.message);
+      await loadResourcingMeta(); render();
+    }));
     bindCapacityPanel();
   }
 
