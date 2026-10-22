@@ -2097,8 +2097,7 @@
   async function ensureMeeting(bu, date) {
     let m = state.resMeetings.find(m => m.business_unit === bu && m.scheduled_for === date);
     if (m) return m;
-    const { data, error } = await sb.from("resourcing_meetings").insert({ business_unit: bu, scheduled_for: date, held_on: date }).select().single();
-    if (error) console.error("Couldn't create meeting", error);
+    const { data } = await sb.from("resourcing_meetings").insert({ business_unit: bu, scheduled_for: date, held_on: date }).select().single();
     if (data) state.resMeetings.push(data);
     return data;
   }
@@ -2562,24 +2561,14 @@
       if (!text) return;
       const m = await ensureMeeting(bu, date);
       if (!m) { alert("Couldn't save the to-do. Try again."); return; }
-      const { error } = await sb.from("resourcing_items").insert({ meeting_id: m.id, kind: "action", text, owner: el("#ri-owner").value.trim() || null });
-      if (error) { alert("Couldn't save the to-do: " + error.message); return; }
+      await sb.from("resourcing_items").insert({ meeting_id: m.id, kind: "action", text, owner: el("#ri-owner").value.trim() || null });
       await loadResourcingMeta(); render();
       const box = el("#ri-text"); if (box) box.focus();
     };
     el("#ri-add").addEventListener("click", addTodo);
     el("#ri-text").addEventListener("keydown", (e) => { if (e.key === "Enter") addTodo(); });
-    content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => {
-      const { error } = await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid);
-      if (error) alert("Couldn't update the to-do: " + error.message);
-      await loadResourcingMeta(); render();
-    }));
-    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => {
-      if (!confirm("Remove this to-do?")) return;
-      const { error } = await sb.from("resourcing_items").delete().eq("id", b.dataset.idel);
-      if (error) alert("Couldn't remove the to-do: " + error.message);
-      await loadResourcingMeta(); render();
-    }));
+    content().querySelectorAll(".res-done").forEach(c => c.addEventListener("change", async () => { await sb.from("resourcing_items").update({ done: c.checked }).eq("id", c.dataset.iid); await loadResourcingMeta(); render(); }));
+    content().querySelectorAll("[data-idel]").forEach(b => b.addEventListener("click", async () => { if (confirm("Remove this to-do?")) { await sb.from("resourcing_items").delete().eq("id", b.dataset.idel); await loadResourcingMeta(); render(); } }));
     bindCapacityPanel();
   }
 
@@ -2799,7 +2788,7 @@
       if (!box) return;
       if (!cap) { box.innerHTML = `<div class="res-note">No capacity set for ${fmtMonth(month)} yet.${me.isAdmin ? " Add hours a day in Team capacity below." : ""}</div>`; return; }
       const units = me.isAdmin ? ["Education", "Planning Center"] : [bu];
-      box.innerHTML = units.map(b => {
+      const rows = units.map(b => {
         const limit = cap * BU_TARGET[b], used = totals[b] || 0, ratio = limit ? used / limit : 0;
         const status = ratio >= 1 ? ["Limit reached", "var(--coral)", "var(--coral-soft)"] : ratio >= 0.8 ? ["Warning: over 80%", "var(--amber)", "var(--amber-soft)"] : ["Within limit", "var(--teal)", "var(--teal-soft)"];
         return `<div class="alloc-row">
@@ -2808,7 +2797,29 @@
             <div class="res-note" style="margin-top:4px;">${fmtH(used)} used of ${fmtH(limit)}, ${fmtH(Math.max(0, limit - used))} left</div></div>
           <div style="text-align:right;"><span class="alloc-num">${pct(ratio)}</span> <span class="tag" style="background:${status[2]};color:${status[1]};">${status[0]}</span></div>
         </div>`;
-      }).join("") + `<div class="res-note" style="margin-top:10px;">${fmtMonth(month)} capacity: ${fmtH(cap)} after a 20% buffer. Education gets 70% and Planning Center 30%; Corporate work uses up time without a limit of its own. The line on each bar marks 80%.</div>`;
+      });
+      // Shared work this month (already included in the Education and Planning Center bars)
+      const counted = countedIds(), mEnd = monthEnd(month);
+      const sharedE = state.timeEntries.filter(e => e.split_group && counted.has(e.person_id) && e.entry_date >= month && e.entry_date <= mEnd);
+      const sh = (u) => sharedE.filter(e => e.business_unit === u).reduce((s, e) => s + Number(e.hours), 0);
+      const shEdu = sh("Education"), shPc = sh("Planning Center");
+      const sharedRow = `<div class="alloc-row" style="padding-left:24px;">
+          <div><span class="tag tag-team-delight">Shared</span></div>
+          <div class="res-note">${me.isAdmin
+            ? `${fmtH(shEdu + shPc)} of shared work this month: ${fmtH(shEdu)} counted in Education, ${fmtH(shPc)} in Planning Center (split 70/30). Already included in the bars above.`
+            : `${fmtH(bu === "Education" ? shEdu : shPc)} of ${bu}'s hours this month come from shared work (split 70/30). Already included in the bar above.`}</div>
+          <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(me.isAdmin ? shEdu + shPc : (bu === "Education" ? shEdu : shPc))}</span></div>
+        </div>`;
+      // Corporate: uses capacity but has no limit (admin only)
+      const corp = totals["Corporate"] || 0;
+      const corpRow = `<div class="alloc-row">
+          <div><span class="tag tag-team-corporate">Corporate</span></div>
+          <div class="res-note">${fmtH(corp)} logged this month. No limit of its own, but it uses up time Education and Planning Center could have had.</div>
+          <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(corp)}</span></div>
+        </div>`;
+      // Order: Education, Planning Center, Shared (under Planning Center), Corporate
+      const html = me.isAdmin ? rows[0] + rows[1] + sharedRow + corpRow : rows[0] + sharedRow;
+      box.innerHTML = html + `<div class="res-note" style="margin-top:10px;">${fmtMonth(month)} capacity: ${fmtH(cap)} after a 20% buffer. Education gets 70% and Planning Center 30%; Corporate work uses up time without a limit of its own. The line on each bar marks 80%.</div>`;
     });
   }
 
