@@ -250,7 +250,15 @@
   .inline-form input, .inline-form select { border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--bg); }
   .res-textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--bg); resize: vertical; }
   .res-notes-read { white-space: pre-wrap; font-size: 13px; margin-bottom: 12px; }
-  @media (max-width: 760px) { .alloc-row { grid-template-columns: 1fr; gap: 6px; } .alloc-row > div:last-child { text-align: left !important; } }
+  .alloc-row[data-unit] { cursor: pointer; }
+  .alloc-row[data-unit]:hover { background: var(--bg); }
+  .res-chev { display: inline-block; width: 16px; font-size: 14px; color: var(--ink-soft); transition: transform .15s; }
+  .res-chev.open { transform: rotate(90deg); }
+  .res-break { margin: 0 0 8px 156px; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+  .res-break-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 13.5px; border-bottom: 1px dashed var(--line); }
+  .res-break-row:last-child { border-bottom: none; }
+  .res-break-row .h { color: var(--ink-soft); white-space: nowrap; }
+  @media (max-width: 760px) { .alloc-row { grid-template-columns: 1fr; gap: 6px; } .alloc-row > div:last-child { text-align: left !important; } .res-break { margin-left: 0; } }
   @media (max-width: 760px) {
     .app { flex-direction: column; }
     .sidebar { width: 100%; flex-direction: row; align-items: center; padding: 12px 16px; overflow-x: auto; }
@@ -394,7 +402,7 @@
     dashboardScope: "dsd", dashboardTeam: null,
     timeEntries: [], resMeetings: [], resItems: [], resFlags: [], resTotalsCache: {},
     resBu: null, resMeetingDate: null, timeWeek: null, teamTimeMode: "week", teamTimeMonth: null, teamTimePerson: "all",
-    holidays: [], timeOff: [], resCapCache: {}, resMonth: null, myTasksShowDone: false
+    holidays: [], timeOff: [], resCapCache: {}, resMonth: null, resOpenUnits: [], resShowAll: [], myTasksShowDone: false
   };
   let channels = {};
 
@@ -2792,45 +2800,73 @@
   }
   function fillLimitPanel(bu) {
     const sel = el("#res-month");
-    if (sel) sel.addEventListener("change", (e) => { state.resMonth = e.target.value; render(); });
+    if (sel && !sel.dataset.bound) { sel.dataset.bound = "1"; sel.addEventListener("change", (e) => { state.resMonth = e.target.value; render(); }); }
     const month = state.resMonth;
     Promise.all([fetchCapacity(month), fetchTotals(month, monthEnd(month))]).then(([cap, totals]) => {
       const box = el("#res-limit");
       if (!box) return;
       if (!cap) { box.innerHTML = `<div class="res-note">No capacity set for ${fmtMonth(month)} yet.${me.isAdmin ? " Add hours a day in Team capacity below." : ""}</div>`; return; }
       const units = me.isAdmin ? ["Education", "Planning Center"] : [bu];
+      // Where the hours went: this month's entries from capacity people, grouped by project
+      const counted = countedIds(), mEnd = monthEnd(month);
+      const rollup = (u) => u === "Delight" ? "Planning Center" : u;
+      const monthE = state.timeEntries.filter(e => counted.has(e.person_id) && e.entry_date >= month && e.entry_date <= mEnd);
+      const sumH = (list) => list.reduce((s, e) => s + Number(e.hours), 0);
+      const projName = (e) => {
+        const p = e.project_id && state.projects.find(x => x.id === e.project_id);
+        return p ? p.name : ((e.label || "").trim() || "Other / no project");
+      };
+      const byProject = (list) => {
+        const m = {};
+        list.forEach(e => { const n = projName(e); m[n] = (m[n] || 0) + Number(e.hours); });
+        return Object.entries(m).map(([name, hours]) => ({ name, hours })).sort((a, b) => b.hours - a.hours);
+      };
+      const breakdown = (key, items) => {
+        if (!state.resOpenUnits.includes(key)) return "";
+        if (!items.length) return `<div class="res-break"><div class="res-note">No hours logged this month.</div></div>`;
+        const all = state.resShowAll.includes(key), shown = all ? items : items.slice(0, 5);
+        return `<div class="res-break">${shown.map(i => `<div class="res-break-row"><span>${escapeHtml(i.name)}</span><span class="h">${fmtH(i.hours)}</span></div>`).join("")}
+          ${items.length > 5 ? `<a href="#" class="res-note" data-showall="${key}">${all ? "Show top 5" : `Show all (${items.length})`}</a>` : ""}</div>`;
+      };
+      const chev = (key) => `<span class="res-chev${state.resOpenUnits.includes(key) ? " open" : ""}">▸</span>`;
+      const sharedE = monthE.filter(e => e.split_group && units.includes(rollup(e.business_unit)));
+
       const rows = units.map(b => {
         const limit = cap * BU_TARGET[b], used = totals[b] || 0, ratio = limit ? used / limit : 0;
         const status = ratio >= 1 ? ["Limit reached", "var(--coral)", "var(--coral-soft)"] : ratio >= 0.8 ? ["Warning: over 80%", "var(--amber)", "var(--amber-soft)"] : ["Within limit", "var(--teal)", "var(--teal-soft)"];
-        return `<div class="alloc-row">
-          <div><span class="tag ${BU_TAG[b]}">${b}</span></div>
+        const unitE = monthE.filter(e => rollup(e.business_unit) === b);
+        const items = byProject(unitE.filter(e => !e.split_group));
+        const sharedH = sumH(unitE.filter(e => e.split_group));
+        if (sharedH) items.push({ name: `Shared work (${Math.round(BU_TARGET[b] * 100)}% share)`, hours: sharedH });
+        return `<div class="alloc-row" data-unit="${b}">
+          <div>${chev(b)}<span class="tag ${BU_TAG[b]}">${b}</span></div>
           <div><div class="alloc-bar"><div class="alloc-fill" style="width:${Math.min(100, ratio * 100)}%;background:${status[1]};"></div><div class="alloc-target" style="left:80%;" title="80% warning"></div></div>
             <div class="res-note" style="margin-top:4px;">${fmtH(used)} used of ${fmtH(limit)}, ${fmtH(Math.max(0, limit - used))} left</div></div>
           <div style="text-align:right;"><span class="alloc-num">${pct(ratio)}</span> <span class="tag" style="background:${status[2]};color:${status[1]};">${status[0]}</span></div>
-        </div>`;
+        </div>` + breakdown(b, items);
       });
-      // Shared work this month (already included in the Education and Planning Center bars)
-      const counted = countedIds(), mEnd = monthEnd(month);
-      const sharedE = state.timeEntries.filter(e => e.split_group && counted.has(e.person_id) && e.entry_date >= month && e.entry_date <= mEnd);
-      const sh = (u) => sharedE.filter(e => e.business_unit === u).reduce((s, e) => s + Number(e.hours), 0);
-      const shEdu = sh("Education"), shPc = sh("Planning Center");
-      const sharedRow = `<div class="alloc-row" style="padding-left:24px;">
-          <div><span class="tag tag-team-delight">Shared</span></div>
+      // Shared: no limit of its own; its hours are already split 70/30 into the bars above
+      const sharedTotal = sumH(sharedE);
+      const sharedRow = `<div class="alloc-row" data-unit="Shared">
+          <div>${chev("Shared")}<span class="tag tag-team-delight">Shared</span></div>
           <div class="res-note">${me.isAdmin
-            ? `${fmtH(shEdu + shPc)} of shared work this month: ${fmtH(shEdu)} counted in Education, ${fmtH(shPc)} in Planning Center (split 70/30). Already included in the bars above.`
-            : `${fmtH(bu === "Education" ? shEdu : shPc)} of ${bu}'s hours this month come from shared work (split 70/30). Already included in the bar above.`}</div>
-          <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(me.isAdmin ? shEdu + shPc : (bu === "Education" ? shEdu : shPc))}</span></div>
-        </div>`;
+            ? "Shared work this month, split 70/30 between Education and Planning Center. Already counted in the bars above."
+            : `${bu}'s share of shared work this month. Already counted in the bar above.`}</div>
+          <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(sharedTotal)}</span></div>
+        </div>` + breakdown("Shared", byProject(sharedE));
       // Corporate: uses capacity but has no limit (admin only)
       const corp = totals["Corporate"] || 0;
-      const corpRow = `<div class="alloc-row">
-          <div><span class="tag tag-team-corporate">Corporate</span></div>
-          <div class="res-note">${fmtH(corp)} logged this month. No limit of its own, but it uses up time Education and Planning Center could have had.</div>
+      const corpRow = `<div class="alloc-row" data-unit="Corporate">
+          <div>${chev("Corporate")}<span class="tag tag-team-corporate">Corporate</span></div>
+          <div class="res-note">No limit of its own, but it uses up time Education and Planning Center could have had.</div>
           <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(corp)}</span></div>
-        </div>`;
-      // Order: Education, Planning Center, Shared (under Planning Center), Corporate
+        </div>` + breakdown("Corporate", byProject(monthE.filter(e => e.business_unit === "Corporate")));
+      // Order: Education, Planning Center, Shared, Corporate
       const html = me.isAdmin ? rows[0] + rows[1] + sharedRow + corpRow : rows[0] + sharedRow;
-      box.innerHTML = html + `<div class="res-note" style="margin-top:10px;">${fmtMonth(month)} capacity: ${fmtH(cap)} after a 20% buffer. Education gets 70% and Planning Center 30%; Corporate work uses up time without a limit of its own. The line on each bar marks 80%.</div>`;
+      box.innerHTML = html + `<div class="res-note" style="margin-top:10px;">${fmtMonth(month)} capacity: ${fmtH(cap)} after a 20% buffer. Education gets 70% and Planning Center 30%; Corporate work uses up time without a limit of its own. The line on each bar marks 80%. Click a business unit to see the projects its hours went to.</div>`;
+      const toggle = (list, key) => list.includes(key) ? list.filter(k => k !== key) : [...list, key];
+      box.querySelectorAll("[data-unit]").forEach(r => r.addEventListener("click", () => { state.resOpenUnits = toggle(state.resOpenUnits, r.dataset.unit); fillLimitPanel(bu); }));
+      box.querySelectorAll("[data-showall]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.resShowAll = toggle(state.resShowAll, a.dataset.showall); fillLimitPanel(bu); }));
     });
   }
 
