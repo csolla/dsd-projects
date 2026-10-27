@@ -4,7 +4,7 @@ Context for Claude Code. This file summarises how the tool is built, the decisio
 
 ## Who and what
 
-- **Owner and sole admin:** Carlota (csolla@digitalsmiledesign.com), project manager at Digital Smile Design (DSD), Madrid HQ. She also leads the Marketing team.
+- **Owner and sole admin:** Carlota (csolla@digitalsmiledesign.com), project manager at Digital Smile Design (DSD), Madrid HQ. She does not lead the Marketing team: she manages its resources (70/30 split), filters and prioritises requests, and connects it with stakeholders.
 - **DSD:** a dental-industry company (cosmetic and restorative dentistry, treatment planning, dentist education), founded by Christian Coachman. About 68 staff.
 - **The tool:** **DSD Atlas** (named 22 October 2026; the repo and URL still say `dsd-projects`), a custom project management app replacing Asana for all DSD staff. One URL, individual logins, live updates for everyone.
 - **Marketing team:** Marita, Daisy, Steph, Carlota. Their profile names in Supabase were created from email usernames (`mmacdona…`, `dmason…`, `swrennall…`). Match people by **email**, never by name.
@@ -74,6 +74,7 @@ Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The bas
   - **Unplanned requests:** requests still waiting for a decision (including ones directors submit through **Request work**). The admin can **Add to pipeline** or **Decline**.
   - **Upcoming pipeline:** scheduled campaigns that start after the selected month.
   - **To-dos:** a simple list per meeting (text plus optional owner), stored in `resourcing_items` with `kind = 'action'`. Open to-dos from earlier meetings carry over. A failed save shows an alert.
+  - **Planned workload by person** (admin only, `workloadPanelHtml()` / `plannedWorkload()`, added 27 October 2026): for the selected month, estimated hours of open tasks and subtasks due that month, per assignee, split by business unit (Shared tasks 70/30; subtasks take their parent task's unit and, without a date of their own, its due date). Shown against each person's capacity after the buffer. Tasks with no due date are listed per person; hours assigned to people not counted in capacity are left out. Needs `subtasks` loaded with `task_id` and `due_date` (`loadOpenSubtasks`).
   - **Team capacity** (admin only): the Counted switch, hours per day, holiday calendar, time off, bank holidays and the "Logged so far" check against hours available.
   - **Import workbook hours:** CSV or pasted rows from the old Marketing time log sheet. Duplicates are skipped.
   - Removed in the simplification: "Hours vs allocation" and "Flags for Brendon". The `resourcing_flags` table and `renderFlagsPanel()` still exist but aren't shown.

@@ -254,6 +254,12 @@
   .res-textarea { width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--bg); resize: vertical; }
   .res-notes-read { white-space: pre-wrap; font-size: 13px; margin-bottom: 12px; }
   .alloc-row[data-unit] { cursor: pointer; }
+  .wl-row { display: grid; grid-template-columns: 140px 1fr 170px; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .wl-bar { position: relative; height: 12px; background: var(--line); border-radius: 6px; display: flex; overflow: hidden; }
+  .wl-seg { height: 100%; }
+  .wl-cap { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed var(--ink); }
+  .wl-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 5px 0 12px; vertical-align: -1px; }
+  @media (max-width: 640px) { .wl-row { grid-template-columns: 1fr; gap: 6px; } }
   .alloc-row[data-unit]:hover { background: var(--bg); }
   .res-chev { display: inline-block; width: 16px; font-size: 14px; color: var(--ink-soft); transition: transform .15s; }
   .res-chev.open { transform: rotate(90deg); }
@@ -629,7 +635,7 @@
     state.progressMap = map;
   }
   async function loadOpenSubtasks() {
-    const { data } = await sb.from("subtasks").select("assignee_id, estimated_hours").eq("done", false);
+    const { data } = await sb.from("subtasks").select("task_id, assignee_id, estimated_hours, due_date").eq("done", false);
     // Resolved to names at render time (via personById), since state.people
     // may still be loading concurrently with this call.
     state.openSubtasks = data || [];
@@ -2536,7 +2542,7 @@
           ${carried.length ? `<div class="section-label" style="margin-top:18px;">Still open from earlier meetings</div>${carried.map(i => todoRow(i, (state.resMeetings.find(m => m.id === i.meeting_id) || {}).scheduled_for)).join("")}` : ""}
         </div>
 
-        ${admin ? capacityPanelHtml() : ""}
+        ${admin ? workloadPanelHtml() + capacityPanelHtml() : ""}
       </div>`;
 
     fillLimitPanel(bu);
@@ -2875,6 +2881,73 @@
       box.querySelectorAll("[data-unit]").forEach(r => r.addEventListener("click", () => { state.resOpenUnits = toggle(state.resOpenUnits, r.dataset.unit); fillLimitPanel(bu); }));
       box.querySelectorAll("[data-showall]").forEach(a => a.addEventListener("click", (e) => { e.preventDefault(); state.resShowAll = toggle(state.resShowAll, a.dataset.showall); fillLimitPanel(bu); }));
     });
+  }
+
+  // ---------- admin: planned workload by person ----------
+  // Open tasks and subtasks due in the selected month, by assignee and business unit,
+  // against each person's capacity after the buffer. Shared hours split 70/30.
+  const WL_UNITS = [["Education", "var(--teal)"], ["Planning Center", "var(--coral)"], ["Corporate", "var(--amber)"], ["No unit", "var(--ink-soft)"]];
+  function plannedWorkload(month) {
+    const end = monthEnd(month), inMonth = (d) => d && d >= month && d <= end;
+    const open = (t) => t.status !== "done" && t.status !== "operational";
+    const taskUnit = (t) => t.businessUnit || ((projectById(t.projectIds[0]) || {}).businessUnit) || null;
+    const byPerson = {}, undated = {};
+    const add = (pid, unit, hours, projectId) => {
+      hours = Number(hours) || 0;
+      if (!hours) return;
+      const key = pid || "unassigned";
+      const r = byPerson[key] || (byPerson[key] = { units: {}, projects: {}, total: 0 });
+      const parts = unit === "Shared" ? [["Education", 0.7], ["Planning Center", 0.3]] : [[unit || "No unit", 1]];
+      parts.forEach(([u, share]) => { const k = u === "Delight" ? "Planning Center" : u; r.units[k] = (r.units[k] || 0) + hours * share; });
+      const pname = (projectById(projectId) || {}).name || "No project";
+      r.projects[pname] = (r.projects[pname] || 0) + hours;
+      r.total += hours;
+    };
+    const taskById = {};
+    state.tasks.forEach(t => { taskById[t.id] = t; });
+    state.tasks.filter(open).forEach(t => {
+      if (inMonth(t.dueDate)) add(t.assigneeId, taskUnit(t), t.estimatedHours, t.projectIds[0]);
+      else if (!t.dueDate && Number(t.estimatedHours)) { const k = t.assigneeId || "unassigned"; undated[k] = (undated[k] || 0) + Number(t.estimatedHours); }
+    });
+    (state.openSubtasks || []).forEach(st => {
+      const t = taskById[st.task_id];
+      if (!t || !open(t)) return;
+      const due = st.due_date || t.dueDate;
+      if (inMonth(due)) add(st.assignee_id, taskUnit(t), st.estimated_hours, t.projectIds[0]);
+      else if (!due && Number(st.estimated_hours)) { const k = st.assignee_id || "unassigned"; undated[k] = (undated[k] || 0) + Number(st.estimated_hours); }
+    });
+    return { byPerson, undated };
+  }
+  function workloadPanelHtml() {
+    const month = state.resMonth;
+    const { byPerson, undated } = plannedWorkload(month);
+    const counted = state.people.filter(p => p.counts_in_capacity).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    const rows = counted.map(p => ({ label: p.name || p.email || "", cap: personMonthBreakdown(p, month).hours * CAPACITY_BUFFER, r: byPerson[p.id], undated: undated[p.id] || 0 }));
+    if (byPerson.unassigned || undated.unassigned) rows.push({ label: "Not assigned", cap: null, r: byPerson.unassigned, undated: undated.unassigned || 0 });
+    const others = Object.keys(byPerson).filter(k => k !== "unassigned" && !counted.some(p => p.id === k)).reduce((s, k) => s + byPerson[k].total, 0);
+    const scale = Math.max(1, ...rows.map(x => Math.max(x.cap || 0, x.r ? x.r.total : 0))) * 1.05;
+    const totals = { cap: rows.reduce((s, x) => s + (x.cap || 0), 0), planned: rows.reduce((s, x) => s + (x.r ? x.r.total : 0), 0) };
+    const unitTotal = (u) => rows.reduce((s, x) => s + ((x.r && x.r.units[u]) || 0), 0);
+    const rowHtml = (x) => {
+      const planned = x.r ? x.r.total : 0, ratio = x.cap ? planned / x.cap : 0;
+      const status = x.cap == null ? null : ratio >= 1 ? ["Over capacity", "var(--coral)", "var(--coral-soft)"] : ratio >= 0.8 ? ["Over 80%", "var(--amber)", "var(--amber-soft)"] : ["Within capacity", "var(--teal)", "var(--teal-soft)"];
+      const segs = x.r ? WL_UNITS.filter(([u]) => x.r.units[u]).map(([u, c]) => `<div class="wl-seg" style="width:${x.r.units[u] / scale * 100}%;background:${c};" title="${u}: ${fmtH(x.r.units[u])}"></div>`).join("") : "";
+      const projects = x.r ? Object.entries(x.r.projects).sort((a, b) => b[1] - a[1]).map(([n, h]) => `${escapeHtml(n)} ${fmtH(h)}`).join(" · ") : "";
+      const split = x.r ? WL_UNITS.filter(([u]) => x.r.units[u]).map(([u]) => `${u} ${fmtH(x.r.units[u])}`).join(", ") : "";
+      return `<div class="wl-row">
+        <div><strong style="font-weight:500;">${escapeHtml(x.label)}</strong><div class="res-note">${x.cap == null ? "No capacity" : "Capacity " + fmtH(x.cap)}</div></div>
+        <div><div class="wl-bar">${segs}${x.cap != null ? `<div class="wl-cap" style="left:${x.cap / scale * 100}%;" title="Capacity ${fmtH(x.cap)}"></div>` : ""}</div>
+          <div class="res-note" style="margin-top:4px;">${planned ? `${split}${projects ? ". " + projects : ""}` : "Nothing planned this month."}${x.undated ? ` Plus ${fmtH(x.undated)} on tasks with no due date.` : ""}</div></div>
+        <div style="text-align:right;"><span class="alloc-num" style="font-size:18px;">${fmtH(planned)}</span>${status ? ` <span class="tag" style="background:${status[2]};color:${status[1]};">${x.cap ? pct(ratio) : "—"}</span>` : ""}</div>
+      </div>`;
+    };
+    return `<div class="panel">
+      <h3>Planned workload by person: ${fmtMonth(month)}</h3>
+      <div class="res-note" style="margin-bottom:6px;">Estimated hours of open tasks and subtasks due this month, by who they're assigned to, against each person's capacity after the 20% buffer (dashed line). Shared tasks are split 70% Education / 30% Planning Center. Only you can see this.</div>
+      <div class="res-note" style="margin-bottom:6px;">${WL_UNITS.map(([u, c]) => `<span class="wl-key" style="background:${c};"></span>${u}`).join("")}</div>
+      ${rows.map(rowHtml).join("")}
+      <div class="res-note" style="margin-top:10px;">Team: ${fmtH(totals.planned)} planned of ${fmtH(totals.cap)} capacity. Education ${fmtH(unitTotal("Education"))} of its ${fmtH(totals.cap * 0.7)} limit; Planning Center ${fmtH(unitTotal("Planning Center"))} of ${fmtH(totals.cap * 0.3)}.${others ? ` ${fmtH(others)} is assigned to people not counted in capacity and isn't included.` : ""} Hours logged so far aren't subtracted: a task counts in full until it's marked done.</div>
+    </div>`;
   }
 
   // ---------- admin: team capacity editor ----------
