@@ -94,10 +94,11 @@ Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The bas
 - **Capacity:** each person's daily hours × working days, minus bank holidays and time off, then minus a **20% buffer** (`CAPACITY_BUFFER = 0.8`, which must match the SQL function).
   - Marita and Daisy: 7.5 hours a day, Madrid calendar.
   - Steph: 6 hours a day, England calendar. She's based in Liverpool.
-  - Bank holidays are loaded up to December 2026. **The 2027 holidays still need adding.**
+  - Bank holidays are loaded up to December 2026, plus January to March 2027 (file `supabase/data/2027-q1_bank_holidays.sql`). **The rest of 2027 still needs adding.**
 - **Reference figures, capacity after the buffer:** October 2026 is 351.6h (Education 246.1h, Planning Center 105.5h). November is 328.8h (230.2h and 98.6h). December is 283.2h (198.2h and 85.0h), which includes time off for Daisy (28–31 December) and Steph (21–24 and 29–31 December).
 - **Alerts:** a warning at 80% of a limit and "limit reached" at 100%. Carlos and JJ see the status, but only Carlota gets notified.
 - **Unplanned requests:** logged and reviewed at the next meeting. An urgent one goes in only if something else is dropped, and that swap is recorded.
+- **Months you can pick in Resourcing:** from October 2026 to five months ahead of today (`limitMonths()`), so a whole quarter ahead can be planned. Changed from two months ahead on 27 October 2026.
 - **Reviewing month by month:** the calendar month is the unit for every figure.
 - **Shared campaigns (the method for every campaign that serves both units):**
   - Use one project, marked Shared, with a budget per unit agreed with each director.

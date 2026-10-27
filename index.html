@@ -2773,7 +2773,7 @@
   function nextMonth(s) { const d = new Date(s.slice(0, 7) + "-01T00:00:00"); d.setMonth(d.getMonth() + 1); return localIso(d); }
   const monthEnd = (s) => addDays(nextMonth(monthStart(s)), -1);
   function fmtMonth(s) { return new Date(s + "T00:00:00").toLocaleDateString(undefined, { month: "long", year: "numeric" }); }
-  function limitMonths() { const out = []; let m = FIRST_LIMIT_MONTH; const last = nextMonth(nextMonth(monthStart(todayIso()))); while (m <= last) { out.push(m); m = nextMonth(m); } return out; }
+  function limitMonths() { const out = []; let m = FIRST_LIMIT_MONTH; let last = monthStart(todayIso()); for (let i = 0; i < 5; i++) last = nextMonth(last); while (m <= last) { out.push(m); m = nextMonth(m); } return out; }
 
   async function loadCapacityData() {
     const h = await sb.from("public_holidays").select("*").order("holiday_date");
