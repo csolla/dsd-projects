@@ -394,8 +394,10 @@
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4ZXZueXl6ZXpmZHNiY2xodnZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1NTAyNzIsImV4cCI6MjEwNTEyNjI3Mn0.lzNi8WSV1e7PgumfdrDZtd3OmPs9J8CP1PXftBu0OFQ";
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // People's departments (Marketing is a department, not a business unit)
-  const TEAMS = ["Education", "Planning Center", "Corporate", "Marketing"];
+  // Departments: the DSD team that owns a project, and each person's team
+  const DEPARTMENTS = ["Planning Center", "Delight", "Education", "Corporate", "Marketing"];
+  const TEAMS = DEPARTMENTS;
+  const DEPT_CLASS = { "Planning Center": "tag-team-planning", "Delight": "tag-team-delight", "Education": "tag-team-education", "Corporate": "tag-team-corporate", "Marketing": "tag-team-marketing" };
   // Business units, used for projects, tasks and hours
   const BUSINESS_UNITS = ["Education", "Planning Center", "Corporate"];
   const PROJECT_BUS = ["Education", "Planning Center", "Corporate", "Shared"];
@@ -607,7 +609,7 @@
     const { data: pf } = await sb.from("project_portfolios").select("*");
     const { data: pc } = await sb.from("project_clients").select("*, profiles(name)");
     state.projects = (projects || []).map(p => ({
-      id: p.id, name: p.name, team: (p.business_unit === "Delight" ? "Planning Center" : p.business_unit) || null, client: p.client_company, status: p.status,
+      id: p.id, name: p.name, team: (p.business_unit === "Delight" ? "Planning Center" : p.business_unit) || null, department: p.department || null, client: p.client_company, status: p.status,
       startDate: p.start_date, endDate: p.end_date, visibleToClient: p.share_with_client,
       budget: p.budget, budgetSpent: p.budget_spent || 0,
       businessUnit: p.business_unit || null, plannedHours: p.planned_hours != null ? Number(p.planned_hours) : null, priority: p.priority,
@@ -798,7 +800,7 @@
   // =========================================================
   async function addProject(data) {
     const { data: row, error } = await sb.from("projects").insert({
-      name: data.name, team: data.businessUnit || "", client_company: data.client, status: data.status,
+      name: data.name, team: data.businessUnit || "", department: data.department || "Marketing", client_company: data.client, status: data.status,
       start_date: data.startDate, end_date: data.endDate, share_with_client: data.visibleToClient,
       business_unit: data.businessUnit || null, planned_hours: data.plannedHours != null ? data.plannedHours : null, priority: data.priority != null ? data.priority : null,
       is_unplanned: !!data.isUnplanned, unplanned_status: data.unplannedStatus || null, requested_on: data.requestedOn || null,
@@ -1102,7 +1104,7 @@
     let unassignedTasks = [];
     if (scope === "team") {
       const dt = state.dashboardTeam;
-      projects = state.projects.filter(p => p.team === dt || (p.team === "Shared" && (dt === "Education" || dt === "Planning Center"))
+      projects = state.projects.filter(p => p.department === dt || p.team === dt || (p.team === "Shared" && (dt === "Education" || dt === "Planning Center"))
         || state.tasks.some(t => t.projectIds.includes(p.id) && (() => { const a = personByName(t.assignee); return a && a.team === dt; })()));
       tasks = state.tasks.filter(t => { const p = personByName(t.assignee); return p && p.team === state.dashboardTeam; });
       subtasksForWorkload = state.openSubtasks.filter(s => { const p = personById(s.assignee_id); return p && p.team === state.dashboardTeam; });
@@ -1226,29 +1228,41 @@
 
   function renderProjects() {
     el("#page-title").textContent = "Projects";
-    el("#page-sub").textContent = "Every project across every business unit";
+    el("#page-sub").textContent = "Every project, by department";
+    if (state.deptFilter === undefined) state.deptFilter = DEPARTMENTS.includes(me.team) ? me.team : "all";
     const wrap = el("#team-filter-wrap");
     wrap.style.display = "flex";
     wrap.innerHTML = `
-      <select id="team-filter-select"><option value="all">All business units</option>${PROJECT_BUS.map(t => `<option value="${t}" ${state.teamFilter===t?'selected':''}>${t === "Shared" ? "Shared campaigns" : t}</option>`).join("")}<option value="none" ${state.teamFilter==='none'?'selected':''}>No business unit</option></select>
+      <select id="dept-filter-select" aria-label="Department" style="margin-right:8px;">${DEPARTMENTS.map(d => `<option value="${d}" ${state.deptFilter===d?'selected':''}>${d === me.team ? d + " (my department)" : d}</option>`).join("")}<option value="all" ${state.deptFilter==='all'?'selected':''}>All departments</option></select>
+      <select id="team-filter-select" aria-label="Business unit"><option value="all">All business units</option>${PROJECT_BUS.map(t => `<option value="${t}" ${state.teamFilter===t?'selected':''}>${t === "Shared" ? "Shared campaigns" : t}</option>`).join("")}<option value="none" ${state.teamFilter==='none'?'selected':''}>No business unit</option></select>
       <button class="btn" id="new-project-btn" style="margin-left:8px;">New project</button>`;
     wrap.querySelector("#team-filter-select").value = state.teamFilter;
     wrap.querySelector("#team-filter-select").addEventListener("change", (e) => { state.teamFilter = e.target.value; render(); });
+    wrap.querySelector("#dept-filter-select").addEventListener("change", (e) => { state.deptFilter = e.target.value; render(); });
     wrap.querySelector("#new-project-btn").addEventListener("click", openNewProjectModal);
 
-    const filtered = state.projects.filter(p => state.teamFilter === "all" || (state.teamFilter === "none" ? !p.team : p.team === state.teamFilter));
-    // Sections by business unit, each ordered by end date (soonest first, no date last)
-    const sectionOrder = ["Education", "Planning Center", "Corporate", "Shared", null];
-    const sectionTitle = (k) => k === null ? "No business unit" : k === "Shared" ? "Shared campaigns" : k;
+    const filtered = state.projects
+      .filter(p => state.deptFilter === "all" || p.department === state.deptFilter)
+      .filter(p => state.teamFilter === "all" || (state.teamFilter === "none" ? !p.team : p.team === state.teamFilter));
     const byDeadline = (a, b) => (a.endDate || "9999").localeCompare(b.endDate || "9999") || a.name.localeCompare(b.name);
-    const sections = sectionOrder.map(k => ({ k, list: filtered.filter(p => (p.team || null) === k).sort(byDeadline) })).filter(x => x.list.length);
+    let sections;
+    if (state.deptFilter === "all") {
+      // All departments: one section per department, your own first
+      const deptOrder = [...DEPARTMENTS].sort((a, b) => (b === me.team) - (a === me.team));
+      sections = [...deptOrder, null].map(k => ({ k, title: k || "No department", list: filtered.filter(p => (p.department || null) === k).sort(byDeadline) })).filter(x => x.list.length);
+    } else {
+      // One department: sections by business unit, each ordered by end date (soonest first, no date last)
+      const sectionOrder = ["Education", "Planning Center", "Corporate", "Shared", null];
+      const sectionTitle = (k) => k === null ? "No business unit" : k === "Shared" ? "Shared campaigns" : k;
+      sections = sectionOrder.map(k => ({ k, title: sectionTitle(k), list: filtered.filter(p => (p.team || null) === k).sort(byDeadline) })).filter(x => x.list.length);
+    }
     const cardHtml = (p) => {
         const progress = projectProgress(p.id);
         return `
         <div class="project-card" data-id="${p.id}">
           <div class="project-card-top">
             <div><div class="project-name">${escapeHtml(p.name)}</div></div>
-            <span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}">${p.team === "Shared" ? "Shared" : (p.team || "No business unit")}</span>
+            <span style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;"><span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}" title="Business unit">${p.team === "Shared" ? "Shared" : (p.team || "No business unit")}</span></span>
           </div>
           <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
           <div class="project-meta"><span class="status-pill"><span class="status-dot ${p.status}"></span>${p.status}</span><span>${fmtDate(p.startDate)} – ${fmtDate(p.endDate)}</span></div>
@@ -1261,7 +1275,7 @@
     };
     content().innerHTML = sections.length ? sections.map(sec => `
       <div class="projects-section" style="margin-bottom:28px;">
-        <div class="section-label" style="margin-bottom:10px;"><h3 style="margin:0;font-size:17px;display:flex;align-items:baseline;gap:10px;">${sectionTitle(sec.k)}<span class="res-note" style="font-family:inherit;">${sec.list.length} project${sec.list.length === 1 ? "" : "s"} · by deadline</span></h3></div>
+        <div class="section-label" style="margin-bottom:10px;"><h3 style="margin:0;font-size:17px;display:flex;align-items:baseline;gap:10px;">${sec.title}<span class="res-note" style="font-family:inherit;">${sec.list.length} project${sec.list.length === 1 ? "" : "s"} · by deadline</span></h3></div>
         <div class="projects-grid">${sec.list.map(cardHtml).join("")}</div>
       </div>`).join("") : `<div class="empty-state">No projects yet for this filter.</div>`;
     content().querySelectorAll(".add-to-portfolio-inline").forEach(sel => {
@@ -1281,7 +1295,7 @@
     const project = state.projects.find(p => p.id === id);
     if (!project) { setView("projects"); return; }
     el("#page-title").textContent = project.name;
-    el("#page-sub").textContent = project.team || "";
+    el("#page-sub").textContent = [project.department, project.team].filter(Boolean).join(" · ");
     el("#team-filter-wrap").style.display = "none";
     const tasks = state.tasks.filter(t => t.projectIds.includes(id));
 
@@ -1421,10 +1435,19 @@
     el("#team-filter-wrap").style.display = "none";
     content().innerHTML = `<div>
       <div class="panel"><h3>Staff (${state.people.length})</h3>
-        ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}<span class="tag ${TEAM_CLASS[p.team] || 'tag-team-marketing'}" style="margin-left:6px;">${p.team||'—'}</span></span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
+        ${state.people.map(p => `<div class="list-row"><span class="assignee-chip"><span class="identity-dot" style="width:20px;height:20px;font-size:9px;background:${colorForName(p.name)}">${initials(p.name)}</span>${escapeHtml(p.name)}${me.isAdmin
+          ? `<select class="person-dept" data-pid="${p.id}" aria-label="Department for ${escapeHtml(p.name)}" style="margin-left:8px;width:auto;"><option value="">No department</option>${DEPARTMENTS.map(d => `<option value="${d}" ${d===p.team?'selected':''}>${d}</option>`).join("")}</select>`
+          : `<span class="tag ${DEPT_CLASS[p.team] || 'tag-team-corporate'}" style="margin-left:6px;">${p.team||'No department'}</span>`}</span></div>`).join("") || `<div class="empty-state">No staff have signed in yet.</div>`}
       </div>
     </div>
-    <div class="banner" style="margin-top:16px;"><span>◐</span><span>People appear here automatically the first time they sign in with their email — there's nothing to add manually.</span></div>`;
+    <div class="banner" style="margin-top:16px;"><span>◐</span><span>People appear here automatically the first time they sign in with their email — there's nothing to add manually.${me.isAdmin ? " Set each person's department here." : ""}</span></div>`;
+    content().querySelectorAll(".person-dept").forEach(sel => sel.addEventListener("change", async () => {
+      const { error } = await sb.from("profiles").update({ team: sel.value || null }).eq("id", sel.dataset.pid);
+      if (error) { alert("Couldn't save the department: " + error.message); return; }
+      const person = state.people.find(x => x.id === sel.dataset.pid);
+      if (person) person.team = sel.value || null;
+      if (me.id === sel.dataset.pid) me.team = sel.value || null;
+    }));
   }
 
   function renderClientPreview() {
@@ -1854,6 +1877,7 @@
 
       <div class="section-label">Details</div>
       <div class="field"><label>Name</label><input id="ps-name" type="text" value="${escapeHtml(project.name)}" /></div>
+      <div class="field"><label>Department</label><select id="ps-dept">${DEPARTMENTS.map(d => `<option value="${d}" ${d===project.department?'selected':''}>${d}</option>`).join("")}</select></div>
       <div class="field"><label>Business unit</label><select id="ps-bu"><option value="">Choose…</option>${PROJECT_BUS.map(b => `<option value="${b}" ${b===project.businessUnit?'selected':''}>${buLabel(b)}</option>`).join("")}</select></div>
       <div class="field"><label>Status</label><select id="ps-status">${STATUSES.map(s => `<option ${s===project.status?'selected':''}>${s}</option>`).join("")}</select></div>
       <div class="field"><label>Start date</label><input id="ps-start" type="date" value="${project.startDate||''}" /></div>
@@ -1889,7 +1913,7 @@
     el("#ps-close").addEventListener("click", () => root.innerHTML = "");
     el("#ps-save-details").addEventListener("click", () => {
       updateProjectField(projectId, {
-        name: el("#ps-name").value.trim() || project.name, businessUnit: el("#ps-bu").value || null, client: project.client || "",
+        name: el("#ps-name").value.trim() || project.name, department: el("#ps-dept").value || null, businessUnit: el("#ps-bu").value || null, client: project.client || "",
         status: el("#ps-status").value, startDate: el("#ps-start").value, endDate: el("#ps-end").value
       });
       root.innerHTML = "";
@@ -1957,6 +1981,7 @@
     const root = el("#modal-root");
     root.innerHTML = `<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><h3>New project</h3>
       <div class="field"><label>Project name</label><input id="mp-name" type="text" /></div>
+      <div class="field"><label>Department</label><select id="mp-dept">${DEPARTMENTS.map(d => `<option value="${d}" ${d===me.team?'selected':''}>${d}</option>`).join("")}</select></div>
       <div class="field"><label>Business unit</label><select id="mp-bu">${PROJECT_BUS.map(b => `<option value="${b}">${buLabel(b)}</option>`).join("")}</select></div>
       <div class="field"><label>Start date</label><input id="mp-start" type="date" /></div>
       <div class="field"><label>Target end date</label><input id="mp-end" type="date" /></div>
@@ -1974,7 +1999,7 @@
         name, client: "",
         startDate: el("#mp-start").value || new Date().toISOString().slice(0,10),
         endDate: el("#mp-end").value || new Date().toISOString().slice(0,10),
-        status: el("#mp-status").value, visibleToClient: false, businessUnit: el("#mp-bu").value || null,
+        status: el("#mp-status").value, visibleToClient: false, department: el("#mp-dept").value || null, businessUnit: el("#mp-bu").value || null,
         portfolioIds: (portfolioField && portfolioField.value) ? [portfolioField.value] : []
       });
       root.innerHTML = "";
