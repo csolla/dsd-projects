@@ -49,7 +49,15 @@ Earlier ones: base schema, subtasks enrichment, budget, attachments and dependen
 9. `13_operational_column.sql` (run 22 October 2026) adds the task status `operational` (the "Operational" board column). Every project gets a "Meetings" task there (trigger `project_meetings_task` on insert; `project_meetings_task_bu` keeps its business unit in step with the project). `project_progress` ignores operational tasks, and the app leaves them out of overdue, due-this-week, unassigned and workload counts.
 10. `14_shared_meetings_tasks.sql` (run 22 October 2026) replaces the Meetings logic with `sync_meetings_tasks(project, bu)`: Shared projects get two Meetings tasks (Education and Planning Center), others one. On a business unit change, unwanted Meetings tasks are reused for a missing unit, or deleted if unused (no comments, subtasks, files or hours).
 
+11. `15_departments.sql` (run 16 November 2026) adds `projects.department` (Planning Center, Delight, Education, Corporate or Marketing; existing projects set to Marketing) and allows Delight again in `profiles.team` (a `not valid` check, so old values stay).
+
 Migrations 05 onwards are kept in the repo under `supabase/migrations/`. The base schema (01–04) isn't in the repo.
+
+## Departments (November 2026, Asana replacement)
+
+- **Departments** (`DEPARTMENTS` in the code): Planning Center, Delight, Education, Corporate, Marketing. Every project has one (`projects.department`) and every person has one (`profiles.team`, set by the admin on the Team page). Procurement is not a department.
+- Projects keep their **Business unit** too, shown on every project. Business units drive Resourcing; departments say which team owns the project.
+- The Projects page opens on the signed-in person's department, with a switch for each department or "All departments" (one section per department, own first). Inside one department, sections are by business unit.
 
 ## Business units and departments (unified, October 2026)
 
